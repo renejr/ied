@@ -8,13 +8,29 @@ import threading
 import sqlite3
 from db import load_global_preferences, init_db, update_last_opened, save_global_preferences
 from viewer_state import save_view_state, load_view_state
+from preferences import (
+    THUMB_CLOSE_ON_SELECT,
+    THUMB_WINDOW_WIDTH,
+    THUMB_WINDOW_HEIGHT,
+    THUMB_WINDOW_X,
+    THUMB_WINDOW_Y
+)
 from customtkinter import CTkImage
 
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("dark-blue")
 
 DB_PATH = "image_editor.db"
-SCHEMA_VERSION = 4
+
+# Load schema version from preferences
+conn = sqlite3.connect(DB_PATH)
+try:
+    cur = conn.cursor()
+    cur.execute("SELECT value FROM preferences WHERE key = 'schema_version'")
+    row = cur.fetchone()
+    SCHEMA_VERSION = int(row[0]) if row else 0
+finally:
+    conn.close()
 
 class ImageEditorApp(ctk.CTk):
     def __init__(self):
@@ -54,18 +70,22 @@ class ImageEditorApp(ctk.CTk):
         self._pan_start_y = 0
 
     def toggle_thumbnails(self):
-            if self.thumbnail_window and self.thumbnail_window.winfo_exists():
-                self.thumbnail_window.destroy()
-                self.thumbnail_window = None
-            else:
-                self.show_thumbnails()
-    
+        if self.thumbnail_window and self.thumbnail_window.winfo_exists():
+            self.thumbnail_window.destroy()
+            self.thumbnail_window = None
+        else:
+            self.show_thumbnails()
+
     def show_thumbnails(self):
         if not self.folder_files:
             return
 
         self.thumbnail_window = ctk.CTkToplevel(self)
         self.thumbnail_window.title("Miniaturas")
+        self.thumbnail_window.geometry(f"{THUMB_WINDOW_WIDTH}x{THUMB_WINDOW_HEIGHT}+{THUMB_WINDOW_X}+{THUMB_WINDOW_Y}")
+        self.thumbnail_window.lift()
+        self.thumbnail_window.focus_force()
+
         frame = ctk.CTkScrollableFrame(self.thumbnail_window)
         frame.pack(expand=True, fill="both", padx=10, pady=10)
 
@@ -75,11 +95,23 @@ class ImageEditorApp(ctk.CTk):
                 img = Image.open(full_path)
                 img.thumbnail((128, 128))
                 preview = CTkImage(light_image=img.copy())
-                btn = ctk.CTkButton(frame, image=preview, text=fname, compound="top",
-                                    command=lambda f=full_path: [self.thumbnail_window.destroy(), setattr(self, 'thumbnail_window', None), self.threaded_load_image(f)])
+                btn = ctk.CTkButton(
+                    frame,
+                    image=preview,
+                    text=fname,
+                    compound="top",
+                    command=lambda f=full_path: self.select_thumbnail(f)
+                )
                 btn.grid(row=i // 5, column=i % 5, padx=5, pady=5)
             except Exception:
                 continue
+
+    def select_thumbnail(self, path):
+        if THUMB_CLOSE_ON_SELECT:
+            self.thumbnail_window.destroy()
+            self.thumbnail_window = None
+        self.threaded_load_image(path)
+
 
     def start_pan(self, event):
         self._pan_start_x = event.x

@@ -1,12 +1,6 @@
-Aqui está o texto original em inglês extraído do PDF:
-
----
-
 **Page 1**  
 
 **Thumbnails**  
-
-Open an image from a selected folder/directory in the viewer. Click the File Menu, then Thumbnails. A box will open and fill with thumbnails of the images in the folder/directory.  
 
 On the left side is a tree view with drives and directories.  
 
@@ -78,8 +72,3 @@ To close the display, click Exit on the display's menu bar or press ESC.
 **Hint:** If you use Drag&Drop of selected thumbs/files to another graphic program (with opened window!) like Windows Paint, Photoshop, etc., the selected files will be loaded in that program/window.  
 
 ---
-
-### Sobre o arquivo Word/WordPad:  
-Infelizmente, **não posso gerar um arquivo Word/WordPad diretamente**, pois esta plataforma não suporta anexos. No entanto, você pode copiar o texto acima e colá-lo em um documento do Word ou WordPad manualmente.  
-
-Se precisar de ajuda para formatá-lo, posso fornecer instruções! 😊
