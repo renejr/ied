@@ -31,6 +31,7 @@ class ImageEditorApp(ctk.CTk):
 
         self.current_index = 0
         self.folder_files = []
+        self.thumbnail_window = None
 
         self.fit_mode = load_global_preferences() or "fit"
         init_db()
@@ -46,19 +47,26 @@ class ImageEditorApp(ctk.CTk):
         self.bind("<Control-minus>", lambda e: self.zoom_out())
         self.bind("<Control-underscore>", lambda e: self.zoom_out())
         self.bind("<Control-0>", lambda e: self.reset_zoom())
-        self.bind("<Key-t>", lambda e: self.show_thumbnails())
+        self.bind("<Key-t>", lambda e: self.toggle_thumbnails())
         self.protocol("WM_DELETE_WINDOW", self.on_exit)
 
         self._pan_start_x = 0
         self._pan_start_y = 0
 
+    def toggle_thumbnails(self):
+            if self.thumbnail_window and self.thumbnail_window.winfo_exists():
+                self.thumbnail_window.destroy()
+                self.thumbnail_window = None
+            else:
+                self.show_thumbnails()
+    
     def show_thumbnails(self):
         if not self.folder_files:
             return
 
-        top = ctk.CTkToplevel(self)
-        top.title("Miniaturas")
-        frame = ctk.CTkScrollableFrame(top)
+        self.thumbnail_window = ctk.CTkToplevel(self)
+        self.thumbnail_window.title("Miniaturas")
+        frame = ctk.CTkScrollableFrame(self.thumbnail_window)
         frame.pack(expand=True, fill="both", padx=10, pady=10)
 
         for i, fname in enumerate(self.folder_files):
@@ -68,7 +76,7 @@ class ImageEditorApp(ctk.CTk):
                 img.thumbnail((128, 128))
                 preview = CTkImage(light_image=img.copy())
                 btn = ctk.CTkButton(frame, image=preview, text=fname, compound="top",
-                                    command=lambda f=full_path: [top.destroy(), self.threaded_load_image(f)])
+                                    command=lambda f=full_path: [self.thumbnail_window.destroy(), setattr(self, 'thumbnail_window', None), self.threaded_load_image(f)])
                 btn.grid(row=i // 5, column=i % 5, padx=5, pady=5)
             except Exception:
                 continue
@@ -114,6 +122,7 @@ class ImageEditorApp(ctk.CTk):
             ("📏 Ajustar largura", lambda: self.set_fit_mode("width")),
             ("📐 Ajustar altura", lambda: self.set_fit_mode("height")),
             ("📎 Ajustar tela", lambda: self.set_fit_mode("fit")),
+            ("🖼 Miniaturas", self.toggle_thumbnails),
             ("🎨 Filtros", None),
             ("🔼 Anterior", self.prev_image),
             ("🔽 Próxima", self.next_image),
