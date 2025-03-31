@@ -42,7 +42,7 @@ class Preferences:
 prefs = Preferences()
 
 # Constantes importáveis
-THUMB_CLOSE_ON_SELECT = prefs.get("thumb_close_on_select", 0, int)
+THUMB_CLOSE_ON_SELECT = prefs.get("thumb_close_on_select", 1, int)
 THUMB_WINDOW_WIDTH = prefs.get("thumb_window_width", 1024, int)
 THUMB_WINDOW_HEIGHT = prefs.get("thumb_window_height", 768, int)
 THUMB_WINDOW_X = prefs.get("thumb_window_x", 0, int)
@@ -51,9 +51,16 @@ THUMB_SIZE = prefs.get("thumb_size", 350, int)
 THUMB_SHOW_INFO = prefs.get("thumb_show_info", 1, int)
 THUMB_SORT_BY_PATH = prefs.get("thumb_sort_by_path", 0, int)
 THUMB_AUTO_SCROLL = prefs.get("thumb_auto_scroll", 0, int)
-thumb_STRETCH_SMALL = prefs.get("thumb_stretch_small", 0, int)
-THUMB_BORDER = prefs.get("thumb_border", 0, int)
+THUMB_STRETCH_SMALL = prefs.get("thumb_stretch_small", 1, int)
+THUMB_BORDER = prefs.get("thumb_border", 1, int)
 THUMB_USE_RESAMPLE = prefs.get("thumb_use_resample", 0, int)
+THUMB_MRUD_COUNT = prefs.get("thumb_mrud_count", 30, int) # Quantidade de imagens recentemente usadas
+
+THUMB_BACKGROUND_COLOR = prefs.get("thumb_background_color", "#FFFFFF")
+THUMB_WINDOW_BACKGROUND_COLOR = prefs.get("thumb_window_background_color", "#FFFFFF")
+THUMB_BORDER_COLOR = prefs.get("thumb_border_color", "#000000")
+THUMB_TEXT_COLOR = prefs.get("thumb_text_color", "#000000")
+THUMB_TEXT_TEMPLATE = prefs.get("thumb_text_template", "$DSF $X\n$W x $H pixels\n$B bpp\n$S\n$T\n$E$E63667")
 
 THUMB_CLOSE_ON_SELECT_BOOL = bool(THUMB_CLOSE_ON_SELECT)
 THUMB_SHOW_INFO_BOOL = bool(THUMB_SHOW_INFO)

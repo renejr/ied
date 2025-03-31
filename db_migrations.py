@@ -2,7 +2,7 @@
 import sqlite3
 
 DB_PATH = "image_editor.db"
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 9  # Updated from 8 to 9
 
 MIGRATIONS = [
     # version 1
@@ -117,6 +117,30 @@ MIGRATIONS = [
 
     PRAGMA foreign_keys = ON;
     UPDATE preferences SET value = '7' WHERE key = 'schema_version';
+    ''',
+    
+    # version 8 - add thumbnail background color preferences
+    '''
+    INSERT OR IGNORE INTO preferences (key, value, criado_em, alterado_em) 
+    VALUES ('thumb_background_color', '#FFFFFF', datetime('now', '-3 hours'), datetime('now', '-3 hours'));
+    
+    INSERT OR IGNORE INTO preferences (key, value, criado_em, alterado_em) 
+    VALUES ('thumb_window_background_color', '#FFFFFF', datetime('now', '-3 hours'), datetime('now', '-3 hours'));
+    
+    UPDATE preferences SET value = '8' WHERE key = 'schema_version';
+    ''',
+    # version 9 - Add thumbnail color and text template preferences
+    '''
+    INSERT OR IGNORE INTO preferences (key, value, criado_em, alterado_em) 
+    VALUES ('thumb_border_color', '#000000', datetime('now', '-3 hours'), datetime('now', '-3 hours'));
+
+    INSERT OR IGNORE INTO preferences (key, value, criado_em, alterado_em) 
+    VALUES ('thumb_text_color', '#000000', datetime('now', '-3 hours'), datetime('now', '-3 hours'));
+
+    INSERT OR IGNORE INTO preferences (key, value, criado_em, alterado_em) 
+    VALUES ('thumb_text_template', '$DSF $X\\n$W x $H pixels\\n$B bpp\\n$S\\n$T\\n$E$E63667', datetime('now', '-3 hours'), datetime('now', '-3 hours'));
+
+    UPDATE preferences SET value = '9' WHERE key = 'schema_version';
     '''
 ]
 
