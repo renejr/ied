@@ -1,11 +1,12 @@
 # file: app_editor_pixelart.py
 import customtkinter as ctk
 from tkinter import filedialog, messagebox
-from PIL import Image, ImageTk, UnidentifiedImageError
+from PIL import Image, ImageTk, UnidentifiedImageError, ImageFile
 import os
 import time
 import threading
 import sqlite3
+import warnings
 from db import load_global_preferences, init_db, update_last_opened, save_global_preferences
 from viewer_state import save_view_state, load_view_state
 from preferences import (
@@ -13,9 +14,25 @@ from preferences import (
     THUMB_WINDOW_WIDTH,
     THUMB_WINDOW_HEIGHT,
     THUMB_WINDOW_X,
-    THUMB_WINDOW_Y
+    THUMB_WINDOW_Y,
+    THUMB_SIZE,
+    THUMB_SHOW_INFO,
+    THUMB_SORT_BY_PATH,
+    THUMB_AUTO_SCROLL,
+    THUMB_SHOW_INFO_BOOL,
+    THUMB_SORT_BY_PATH_BOOL,
+    THUMB_AUTO_SCROLL_BOOL
 )
 from customtkinter import CTkImage
+
+# Set a reasonable maximum image size limit (adjust as needed)
+# This is approximately 4 times the default limit
+Image.MAX_IMAGE_PIXELS = 358000000  # ~18900x18900 pixels
+
+# Or suppress the DecompressionBombWarning if you trust your image sources
+# warnings.filterwarnings("ignore", category=Image.DecompressionBombWarning)
+
+print(f"[Miniaturas_app] Tamanho: {THUMB_SIZE}px")
 
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("dark-blue")
@@ -31,6 +48,9 @@ try:
     SCHEMA_VERSION = int(row[0]) if row else 0
 finally:
     conn.close()
+
+# PIL workaround para imagens incompletas
+ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 class ImageEditorApp(ctk.CTk):
     def __init__(self):
@@ -74,43 +94,58 @@ class ImageEditorApp(ctk.CTk):
             self.thumbnail_window.destroy()
             self.thumbnail_window = None
         else:
-            self.show_thumbnails()
+            threading.Thread(target=self.show_thumbnails, daemon=True).start()
 
     def show_thumbnails(self):
         if not self.folder_files:
             return
 
-        self.thumbnail_window = ctk.CTkToplevel(self)
-        self.thumbnail_window.title("Miniaturas")
-        self.thumbnail_window.geometry(f"{THUMB_WINDOW_WIDTH}x{THUMB_WINDOW_HEIGHT}+{THUMB_WINDOW_X}+{THUMB_WINDOW_Y}")
-        self.thumbnail_window.lift()
-        self.thumbnail_window.focus_force()
+        def build():
+            self.thumbnail_window = ctk.CTkToplevel(self)
+            self.thumbnail_window.title("Miniaturas")
+            self.thumbnail_window.geometry(f"{THUMB_WINDOW_WIDTH}x{THUMB_WINDOW_HEIGHT}+{THUMB_WINDOW_X}+{THUMB_WINDOW_Y}")
+            self.thumbnail_window.lift()
+            self.thumbnail_window.focus_force()
 
-        frame = ctk.CTkScrollableFrame(self.thumbnail_window)
-        frame.pack(expand=True, fill="both", padx=10, pady=10)
+            frame = ctk.CTkScrollableFrame(self.thumbnail_window)
+            frame.pack(expand=True, fill="both", padx=10, pady=10)
 
-        for i, fname in enumerate(self.folder_files):
-            full_path = os.path.join(os.path.dirname(self.image_path), fname)
-            try:
-                img = Image.open(full_path)
-                img.thumbnail((128, 128))
-                preview = CTkImage(light_image=img.copy())
-                btn = ctk.CTkButton(
-                    frame,
-                    image=preview,
-                    text=fname,
-                    compound="top",
-                    command=lambda f=full_path: self.select_thumbnail(f)
-                )
-                btn.grid(row=i // 5, column=i % 5, padx=5, pady=5)
-            except Exception:
-                continue
+            label = ctk.CTkLabel(frame, text=f"[Miniaturas] Tamanho: {THUMB_SIZE}px", anchor="w")
+            label.grid(row=0, column=0, columnspan=5, sticky="w", pady=(0, 10))
+
+            for i, fname in enumerate(self.folder_files):
+                full_path = os.path.join(os.path.dirname(self.image_path), fname)
+                try:
+                    # More efficient thumbnail creation
+                    with Image.open(full_path) as img:
+                        # Create thumbnail without loading the entire image
+                        img.thumbnail((THUMB_SIZE, THUMB_SIZE), Image.Resampling.LANCZOS)
+                        # Create a copy of the small thumbnail
+                        thumb_copy = img.copy()
+                    
+                    preview = CTkImage(light_image=thumb_copy)
+                    btn = ctk.CTkButton(
+                        frame,
+                        image=preview,
+                        text=fname,
+                        compound="top",
+                        command=lambda f=full_path: self.select_thumbnail(f)
+                    )
+                    btn.grid(row=(i + 1) // 5, column=(i + 1) % 5, padx=5, pady=5)
+                except Exception as e:
+                    print(f"Error loading thumbnail for {fname}: {e}")
+                    continue
+
+        self.after(0, build)
 
     def select_thumbnail(self, path):
         if THUMB_CLOSE_ON_SELECT:
             self.thumbnail_window.destroy()
             self.thumbnail_window = None
         self.threaded_load_image(path)
+
+    # (restante do código permanece inalterado)
+
 
 
     def start_pan(self, event):
