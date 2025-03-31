@@ -1,4 +1,3 @@
-# file: app_editor_pixelart.py
 import customtkinter as ctk
 from tkinter import filedialog, messagebox
 from PIL import Image, ImageTk, UnidentifiedImageError, ImageFile
@@ -21,9 +20,15 @@ from preferences import (
     THUMB_AUTO_SCROLL,
     THUMB_SHOW_INFO_BOOL,
     THUMB_SORT_BY_PATH_BOOL,
-    THUMB_AUTO_SCROLL_BOOL
+    THUMB_AUTO_SCROLL_BOOL,
+    THUMB_BACKGROUND_COLOR,
+    THUMB_WINDOW_BACKGROUND_COLOR,
+    THUMB_BORDER_COLOR,
+    THUMB_TEXT_COLOR,
+    THUMB_TEXT_TEMPLATE
 )
 from customtkinter import CTkImage
+from collections import deque  # Import deque for efficient queue
 
 # Set a reasonable maximum image size limit (adjust as needed)
 # This is approximately 4 times the default limit
@@ -55,7 +60,7 @@ ImageFile.LOAD_TRUNCATED_IMAGES = True
 class ImageEditorApp(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title("PixelArt Image Editor")
+        self.title("PixelArt Image Editor - Nenhuma Imagem")  # Default title
         self.geometry("1024x768")
         self.minsize(800, 600)
 
@@ -65,9 +70,18 @@ class ImageEditorApp(ctk.CTk):
         self.image_modified = False
         self.zoom_level = 1.0
 
+        # Add animation-related attributes initialization
+        self.is_animated = False
+        self.animation_frames = []
+        self.current_frame = 0
+        self.animation_running = False
+        self.animation_speed = 100
+        
         self.current_index = 0
         self.folder_files = []
         self.thumbnail_window = None
+        self.thumbnail_widgets = []  # Store thumbnail widgets
+        self.thumbnail_labels = []   # Store thumbnail labels
 
         self.fit_mode = load_global_preferences() or "fit"
         init_db()
@@ -101,52 +115,146 @@ class ImageEditorApp(ctk.CTk):
             return
 
         def build():
+            print("show_thumbnails: build() started")  # Debug print
             self.thumbnail_window = ctk.CTkToplevel(self)
             self.thumbnail_window.title("Miniaturas")
             self.thumbnail_window.geometry(f"{THUMB_WINDOW_WIDTH}x{THUMB_WINDOW_HEIGHT}+{THUMB_WINDOW_X}+{THUMB_WINDOW_Y}")
             self.thumbnail_window.lift()
             self.thumbnail_window.focus_force()
 
-            frame = ctk.CTkScrollableFrame(self.thumbnail_window)
-            frame.pack(expand=True, fill="both", padx=10, pady=10)
+            # Apply the window background color
+            self.thumbnail_window.configure(fg_color=THUMB_WINDOW_BACKGROUND_COLOR)
 
-            label = ctk.CTkLabel(frame, text=f"[Miniaturas] Tamanho: {THUMB_SIZE}px", anchor="w")
-            label.grid(row=0, column=0, columnspan=5, sticky="w", pady=(0, 10))
+            # Create a main frame with padding
+            main_frame = ctk.CTkFrame(self.thumbnail_window, fg_color=THUMB_WINDOW_BACKGROUND_COLOR)
+            main_frame.pack(expand=True, fill="both", padx=10, pady=10)
 
-            for i, fname in enumerate(self.folder_files):
-                full_path = os.path.join(os.path.dirname(self.image_path), fname)
-                try:
-                    # More efficient thumbnail creation
-                    with Image.open(full_path) as img:
-                        # Create thumbnail without loading the entire image
-                        img.thumbnail((THUMB_SIZE, THUMB_SIZE), Image.Resampling.LANCZOS)
-                        # Create a copy of the small thumbnail
-                        thumb_copy = img.copy()
-                    
-                    preview = CTkImage(light_image=thumb_copy)
-                    btn = ctk.CTkButton(
-                        frame,
-                        image=preview,
-                        text=fname,
-                        compound="top",
-                        command=lambda f=full_path: self.select_thumbnail(f)
-                    )
-                    btn.grid(row=(i + 1) // 5, column=(i + 1) % 5, padx=5, pady=5)
-                except Exception as e:
-                    print(f"Error loading thumbnail for {fname}: {e}")
-                    continue
+            # Create scrollable frame with matching background
+            self.frame = ctk.CTkScrollableFrame(main_frame, fg_color=THUMB_WINDOW_BACKGROUND_COLOR)
+            self.frame.pack(expand=True, fill="both")
 
+            # Configure grid layout with consistent spacing
+            self.cols = 5  # Number of columns in the grid
+            for i in range(self.cols):
+                self.frame.grid_columnconfigure(i, weight=1, uniform="thumbnails")
+
+            # Add header if needed
+            if THUMB_SHOW_INFO_BOOL:
+                label = ctk.CTkLabel(self.frame, text=f"[Miniaturas] Tamanho: {THUMB_SIZE}px", 
+                                    anchor="w", fg_color=THUMB_WINDOW_BACKGROUND_COLOR)
+                label.grid(row=0, column=0, columnspan=self.cols, sticky="w", pady=(0, 10))
+                self.start_row = 1
+            else:
+                self.start_row = 0
+
+            # Calculate the fixed size for thumbnails
+            self.thumb_size = THUMB_SIZE
+            self.cell_padding = 5
+
+            self.thumbnails = []
+            self.visible_thumbnails = []
+            self.first_visible_row = 0
+            self.last_visible_row = 0
+            self.max_rows = 0
+
+            self.create_thumbnail_objects()
+            self.calculate_visible_rows()
+            self.render_visible_thumbnails()
+
+            self.frame.bind("<Configure>", self.on_frame_configure)
+            self.frame.bind("<MouseWheel>", self.on_mouse_wheel)
+            print("show_thumbnails: build() finished")  # Debug print
+
+        print("show_thumbnails: started")  # Debug print
         self.after(0, build)
+        print("show_thumbnails: finished")  # Debug print
+
+    def create_thumbnail_objects(self):
+        for i, fname in enumerate(self.folder_files):
+            full_path = os.path.join(os.path.dirname(self.image_path), fname)
+            self.thumbnails.append({
+                "path": full_path,
+                "image": None,
+                "widget": None,
+                "label": None,
+                "row": (i // self.cols) + self.start_row,
+                "col": i % self.cols
+            })
+            self.max_rows = (i // self.cols) + self.start_row
+
+    def calculate_visible_rows(self):
+        try:
+            self.first_visible_row = int(self.frame.yview()[0] * self.max_rows)
+            self.last_visible_row = int(self.frame.yview()[1] * self.max_rows) + 1
+        except AttributeError:
+            # Handle the case where self.frame is not yet initialized
+            self.first_visible_row = 0
+            self.last_visible_row = 1
+
+    def render_visible_thumbnails(self):
+        for thumb_data in self.visible_thumbnails:
+            if thumb_data["widget"]:
+                thumb_data["widget"].grid_forget()
+                thumb_data["label"].grid_forget()
+        self.visible_thumbnails = []
+
+        for thumb_data in self.thumbnails:
+            if self.first_visible_row <= thumb_data["row"] <= self.last_visible_row:
+                self.visible_thumbnails.append(thumb_data)
+                if not thumb_data["widget"]:
+                    thumb_data["widget"] = ctk.CTkFrame(self.frame, fg_color=THUMB_BACKGROUND_COLOR,
+                                                    width=self.thumb_size, height=self.thumb_size)
+                    thumb_data["label"] = ctk.CTkLabel(thumb_data["widget"], text="", fg_color=THUMB_BACKGROUND_COLOR)
+                    self.thumbnail_widgets.append(thumb_data["widget"])  # Keep track of widgets
+                    self.thumbnail_labels.append(thumb_data["label"])    # Keep track of labels
+                
+                thumb_data["widget"].grid(row=thumb_data["row"], column=thumb_data["col"],
+                                        padx=self.cell_padding, pady=self.cell_padding, sticky="nsew")
+                
+                # Configure grid layout within the thumbnail frame
+                thumb_data["widget"].grid_rowconfigure(0, weight=1)  # Image expands vertically
+                thumb_data["widget"].grid_rowconfigure(1, weight=0)  # Label at bottom
+                thumb_data["widget"].grid_columnconfigure(0, weight=1) # Center horizontally
+
+                thumb_data["label"].grid(row=1, column=0, sticky="ew") # Label at bottom
+                
+                if not thumb_data["image"]:
+                    try:
+                        with Image.open(thumb_data["path"]) as img:
+                            width, height = img.size
+                            aspect = width / height
+                            
+                            # Calculate new dimensions to fit within the thumbnail size
+                            if aspect > 1:
+                                new_width = min(self.thumb_size, width)
+                                new_height = int(new_width / aspect)
+                            else:
+                                new_height = min(self.thumb_size, height)
+                                new_width = int(new_height * aspect)
+                            
+                            img.thumbnail((new_width, new_height), Image.Resampling.LANCZOS)
+                            thumb_copy = img.copy()
+                        thumb_data["image"] = CTkImage(light_image=thumb_copy, size=(new_width, new_height))
+                        
+                    except Exception as e:
+                        print(f"Error loading thumbnail for {thumb_data['path']}: {e}")
+                        continue
+                
+                thumb_data["label"].configure(image=thumb_data["image"],
+                                            text_color=THUMB_TEXT_COLOR,
+                                            text=os.path.basename(thumb_data["path"]),
+                                            wraplength=self.thumb_size - 10,
+                                            anchor="center")  # Center the text
+                
+                # Make the whole frame clickable
+                thumb_data["widget"].bind("<Button-1>", lambda e, f=thumb_data["path"]: self.select_thumbnail(f))
+                thumb_data["label"].bind("<Button-1>", lambda e, f=thumb_data["path"]: self.select_thumbnail(f))
 
     def select_thumbnail(self, path):
         if THUMB_CLOSE_ON_SELECT:
             self.thumbnail_window.destroy()
             self.thumbnail_window = None
         self.threaded_load_image(path)
-
-    # (restante do código permanece inalterado)
-
-
 
     def start_pan(self, event):
         self._pan_start_x = event.x
@@ -220,12 +328,14 @@ class ImageEditorApp(ctk.CTk):
         self.h_scroll.grid(row=1, column=0, sticky="ew")
         self.v_scroll.grid(row=0, column=1, sticky="ns")
 
-        self.canvas.bind("<MouseWheel>", self.on_mouse_wheel)
+        # Use lambda binding to call zoom functions
+        self.canvas.bind("<MouseWheel>", lambda event: self.zoom(event))
         self.canvas.bind("<ButtonPress-1>", self.start_pan)
         self.canvas.bind("<B1-Motion>", self.do_pan)
 
         self.status_bar = ctk.CTkLabel(self, text="Nenhuma imagem carregada", anchor="w")
         self.status_bar.grid(row=1, column=0, columnspan=2, sticky="sew", padx=10, pady=5)
+
 
     def set_loading(self, is_loading):
             if is_loading:
@@ -244,7 +354,45 @@ class ImageEditorApp(ctk.CTk):
             try:
                 self.image_path = path
                 try:
-                    self.loaded_image = Image.open(self.image_path)
+                    # Load the image and check if it's animated
+                    img = Image.open(self.image_path)
+                    
+                    # Reset animation variables
+                    self.is_animated = False
+                    self.animation_frames = []
+                    self.current_frame = 0
+                    self.animation_running = False
+                    
+                    # Check if this is an animated GIF
+                    if getattr(img, "is_animated", False):
+                        self.is_animated = True
+                        self.animation_frames = []
+                        
+                        # Get animation speed from the first frame
+                        self.animation_speed = img.info.get('duration', 100)
+                        
+                        # Load all frames
+                        try:
+                            for i in range(img.n_frames):
+                                img.seek(i)
+                                self.animation_frames.append(img.copy())
+                            
+                            # Set the first frame as the loaded image
+                            self.loaded_image = self.animation_frames[0]
+                            
+                            # Start animation if we have frames
+                            if self.animation_frames:
+                                self.animation_running = True
+                                self.animate_gif()
+                        except Exception as e:
+                            print(f"Error loading animation frames: {e}")
+                            # Fallback to static image
+                            self.is_animated = False
+                            self.loaded_image = img.copy()
+                    else:
+                        # Regular non-animated image
+                        self.loaded_image = img.copy()
+                    
                 except (FileNotFoundError, UnidentifiedImageError) as e:
                     messagebox.showerror("Erro ao abrir imagem", str(e))
                     return
@@ -264,71 +412,89 @@ class ImageEditorApp(ctk.CTk):
                 self.set_loading(False)
         threading.Thread(target=task, daemon=True).start()
 
-    def update_status_bar(self):
-        from viewer_state import load_view_state
-        if not self.loaded_image or not self.image_path:
-            self.status_bar.configure(text="Nenhuma imagem carregada")
+    def animate_gif(self):
+        if not self.is_animated or not self.animation_running or not self.animation_frames:
             return
-
-        width, height = self.loaded_image.size
-        mode = self.loaded_image.mode
-        bpp = 8 * len(mode)
-
-        extension = os.path.splitext(self.image_path)[1].upper().replace(".", "")
-        size_mb = os.path.getsize(self.image_path) / (1024 * 1024)
-        timestamp = time.strftime("%d/%m/%Y %H:%M", time.localtime(os.path.getmtime(self.image_path)))
-
-        folder = os.path.dirname(self.image_path)
-        valid_ext = (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff", ".gif", ".ico")
-        self.folder_files = [f for f in os.listdir(folder) if f.lower().endswith(valid_ext)]
-        self.folder_files.sort()
-        self.current_index = self.folder_files.index(os.path.basename(self.image_path))
-
-        total = len(self.folder_files)
-        pos = self.current_index + 1 if total > 0 else 0
-
-        zoom_pct = self.zoom_level * 100
-
-        view_state = load_view_state(self.image_path)
-        last_opened_fmt = ""
-        if view_state:
-            conn = sqlite3.connect(DB_PATH)
-            cur = conn.cursor()
-            cur.execute("SELECT last_opened FROM images WHERE path = ?", (self.image_path,))
-            row = cur.fetchone()
-            conn.close()
-            if row and row[0]:
-                last_opened_fmt = time.strftime("%d/%m/%Y %H:%M", time.strptime(row[0], "%Y-%m-%d %H:%M:%S"))
-
-        modified_flag = "🔧 " if self.image_modified else ""
-
-        status = (
-            f"{modified_flag}📐 {width} x {height} | 🎨 {bpp} BPP | 🧩 {extension} | 💾 {size_mb:.2f} MB | "
-            f"🕓 {timestamp} | 📁 {pos}/{total} | 🔍 {zoom_pct:.0f}% | ⏱ Acessado: {last_opened_fmt}"
-        )
-
-        self.status_bar.configure(text=status)
+            
+        # Move to next frame
+        self.current_frame = (self.current_frame + 1) % len(self.animation_frames)
+        self.loaded_image = self.animation_frames[self.current_frame]
         
+        # Display the current frame
+        self.display_image()
+        
+        # Schedule the next frame
+        self.after(self.animation_speed, self.animate_gif)
+    
     def display_image(self):
         if self.loaded_image:
             try:
                 img = self.loaded_image.copy()
+                canvas_width = self.canvas.winfo_width()
+                canvas_height = self.canvas.winfo_height()
                 new_size = (int(img.width * self.zoom_level), int(img.height * self.zoom_level))
                 img = img.resize(new_size, Image.LANCZOS)
 
                 self.tk_image = ImageTk.PhotoImage(img)
                 self.canvas.delete("all")
                 self.canvas.config(scrollregion=(0, 0, new_size[0], new_size[1]))
-                self.canvas.create_image(0, 0, image=self.tk_image, anchor="nw")
-                self.canvas.xview_moveto(0.5 - (self.canvas.winfo_width() / (2 * new_size[0])))
-                self.canvas.yview_moveto(0.5 - (self.canvas.winfo_height() / (2 * new_size[1])))
+
+                # Calculate the center coordinates
+                x = (canvas_width - new_size[0]) // 2
+                y = (canvas_height - new_size[1]) // 2
+
+                self.canvas.create_image(x, y, image=self.tk_image, anchor="nw")
+
             except OSError:
                 messagebox.showerror("Erro", "Imagem corrompida ou incompleta. Não foi possível exibir.")
 
+    def update_status_bar(self):
+            if not self.loaded_image or not self.image_path:
+                self.status_bar.configure(text="Nenhuma imagem carregada")
+                return
+
+            width, height = self.loaded_image.size
+            mode = self.loaded_image.mode
+            bpp = 8 * len(mode)
+
+            extension = os.path.splitext(self.image_path)[1].upper().replace(".", "")
+            size_mb = os.path.getsize(self.image_path) / (1024 * 1024)
+            timestamp = time.strftime("%d/%m/%Y %H:%M", time.localtime(os.path.getmtime(self.image_path)))
+
+            folder = os.path.dirname(self.image_path)
+            valid_ext = (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff", ".gif", ".ico")
+            self.folder_files = [f for f in os.listdir(folder) if f.lower().endswith(valid_ext)]
+            self.folder_files.sort()
+            self.current_index = self.folder_files.index(os.path.basename(self.image_path))
+
+            total = len(self.folder_files)
+            pos = self.current_index + 1 if total > 0 else 0
+
+            zoom_pct = self.zoom_level * 100
+
+            # Add animation info if applicable
+            animation_info = f"🎬 {len(self.animation_frames)} frames | " if self.is_animated else ""
+
+            modified_flag = "🔧 " if self.image_modified else ""
+
+            status = (
+                f"{modified_flag}📐 {width} x {height} | 🎨 {bpp} BPP | 🧩 {extension} | 💾 {size_mb:.2f} MB | "
+                f"{animation_info}🕓 {timestamp} | 📁 {pos}/{total} | 🔍 {zoom_pct:.0f}%"
+            )
+
+            self.status_bar.configure(text=status)
+
     def on_resize(self, event):
         if event.widget == self:
+            # Correctly call the methods within the class context
             self.after(100, lambda: [self.display_image(), self.update_status_bar()])
 
+    def zoom(self, event):
+        if event.delta > 0:
+            self.zoom_in()
+        else:
+            self.zoom_out()
+    
     def zoom_in(self):
         self.zoom_level *= 1.1
         self.display_image()
@@ -368,21 +534,28 @@ class ImageEditorApp(ctk.CTk):
         )
         if not file_path:
             return
-        self.image_path = file_path
+            
+        # Use threaded_load_image for loading the image
+        self.threaded_load_image(file_path)
         
-        self.title(f"PixelArt Image Editor - {os.path.basename(self.image_path)}")
+        # Check if file_path is valid before setting image_path and title
+        if file_path:
+            self.image_path = file_path
+            self.title(f"PixelArt Image Editor - {os.path.basename(self.image_path)}")
 
-        folder = os.path.dirname(self.image_path)
-        valid_ext = (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff", ".gif", ".ico")
-        self.folder_files = [f for f in os.listdir(folder) if f.lower().endswith(valid_ext)]
-        self.folder_files.sort()
-        self.current_index = self.folder_files.index(os.path.basename(file_path))
+            folder = os.path.dirname(self.image_path)
+            valid_ext = (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff", ".gif", ".ico")
+            self.folder_files = [f for f in os.listdir(folder) if f.lower().endswith(valid_ext)]
+            self.folder_files.sort()
+            self.current_index = self.folder_files.index(os.path.basename(file_path))
 
-        self.loaded_image = Image.open(self.image_path)
-        self.image_modified = False
-        self.zoom_level = self.get_fit_zoom()
-        self.display_image()
-        self.update_status_bar()
+            self.loaded_image = Image.open(self.image_path)
+            self.image_modified = False
+            self.zoom_level = self.get_fit_zoom()
+            self.display_image()
+            self.update_status_bar()
+        else:
+            self.title("PixelArt Image Editor - Nenhuma Imagem") # Set a default title
 
     def set_fit_mode(self, mode):
         self.fit_mode = mode
@@ -466,12 +639,15 @@ class ImageEditorApp(ctk.CTk):
         self.update_status_bar()
 
     def on_exit(self):
+        # Stop animation before exiting
+        self.animation_running = False
+        
         if not self.loaded_image:
             if self.image_path:
                 save_global_preferences("last_opened_path", self.image_path)
             self.destroy()
             return
-
+        
         if self.image_modified:
             response = messagebox.askyesnocancel(
                 "Sair e salvar imagem?",
@@ -487,6 +663,14 @@ class ImageEditorApp(ctk.CTk):
                 return
         else:
             self.destroy()
+
+    def on_frame_configure(self, event):
+        self.calculate_visible_rows()
+        self.render_visible_thumbnails()
+
+    def on_mouse_wheel(self, event):
+        self.calculate_visible_rows()
+        self.render_visible_thumbnails()
 
 if __name__ == "__main__":
     app = ImageEditorApp()
