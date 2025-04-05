@@ -49,5 +49,3 @@ Baseado no seu código atual, aqui estão algumas sugestões para novas funciona
     - Macros para repetir operações comuns
     - Ações em lote para processar múltiplas imagens
     - Presets salvos para aplicar combinações de efeitos
-
-Estas funcionalidades seriam particularmente úteis para um editor focado em pixel art, complementando as capacidades de análise de cores e visualização que você já implementou.
