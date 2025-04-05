@@ -1,6 +1,6 @@
 # PixelArt Image Editor
 
-![PixelArt Editor Banner](https://raw.githubusercontent.com/renejr/ied/main/docs/images/banner.png)
+![PixelArt Editor Banner](https://files.oaiusercontent.com/file-Q75aQPUo9Lw4feT2xQhf4Q?se=2025-04-05T07%3A27%3A31Z&sp=r&sv=2024-08-04&sr=b&rscc=max-age%3D604800%2C%20immutable%2C%20private&rscd=attachment%3B%20filename%3Dc036423a-bc17-449d-bd70-862404004569.webp&sig=O8HyOVE980yQz19j5i4xfbjJViJadLphyP3REfuS4U0%3D)
 
 ## 📋 Overview
 
