@@ -2,7 +2,7 @@
 import sqlite3
 
 DB_PATH = "image_editor.db"
-SCHEMA_VERSION = 9  # Updated from 8 to 9
+SCHEMA_VERSION = 10  # Updated from 9 to 10
 
 MIGRATIONS = [
     # version 1
@@ -141,6 +141,18 @@ MIGRATIONS = [
     VALUES ('thumb_text_template', '$DSF $X\\n$W x $H pixels\\n$B bpp\\n$S\\n$T\\n$E$E63667', datetime('now', '-3 hours'), datetime('now', '-3 hours'));
 
     UPDATE preferences SET value = '9' WHERE key = 'schema_version';
+    ''',
+    
+    # version 10 - Add imagens_criadas table for storing created images
+    '''
+    CREATE TABLE IF NOT EXISTS imagens_criadas (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        fonte VARCHAR(250) NOT NULL,
+        img_base64 LONGTEXT NOT NULL,
+        data_criacao TIMESTAMP DEFAULT (datetime('now', '-3 hours'))
+    );
+
+    UPDATE preferences SET value = '10' WHERE key = 'schema_version';
     '''
 ]
 
