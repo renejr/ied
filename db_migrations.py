@@ -2,7 +2,7 @@
 import sqlite3
 
 DB_PATH = "image_editor.db"
-SCHEMA_VERSION = 10  # Updated from 9 to 10
+SCHEMA_VERSION = 11  # Updated from 10 to 11
 
 MIGRATIONS = [
     # version 1
@@ -153,6 +153,41 @@ MIGRATIONS = [
     );
 
     UPDATE preferences SET value = '10' WHERE key = 'schema_version';
+    ''',
+    # version 11
+    '''
+    -- Tabela para armazenar histórico de edições
+    CREATE TABLE IF NOT EXISTS history_actions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        image_id INTEGER,
+        action_type TEXT NOT NULL,
+        action_data BLOB,
+        timestamp TIMESTAMP DEFAULT (datetime('now', 'localtime')),
+        description TEXT,
+        FOREIGN KEY (image_id) REFERENCES images(id) ON DELETE CASCADE
+    );
+    
+    -- Tabela para armazenar pontos de restauração
+    CREATE TABLE IF NOT EXISTS restoration_points (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        image_id INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        image_data BLOB NOT NULL,
+        timestamp TIMESTAMP DEFAULT (datetime('now', 'localtime')),
+        description TEXT,
+        FOREIGN KEY (image_id) REFERENCES images(id) ON DELETE CASCADE
+    );
+    
+    -- Tabela para armazenar a posição atual no histórico para cada imagem
+    CREATE TABLE IF NOT EXISTS history_state (
+        image_id INTEGER PRIMARY KEY,
+        current_position INTEGER DEFAULT 0,
+        max_position INTEGER DEFAULT 0,
+        FOREIGN KEY (image_id) REFERENCES images(id) ON DELETE CASCADE
+    );
+    
+    -- Atualiza a versão do schema
+    UPDATE preferences SET value = '11' WHERE key = 'schema_version';
     '''
 ]
 

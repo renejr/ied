@@ -42,6 +42,7 @@ from preferences import (
 )
 from customtkinter import CTkImage
 from collections import deque  # Import deque for efficient queue
+from extensions.history_ui import HistoryUI  # Adicione esta importação
 import math
 from image_processor import ImageProcessor
 import requests
@@ -49,6 +50,8 @@ import base64
 from io import BytesIO
 import re
 from urllib.parse import urlparse
+# Add these imports at the top of the file, after the existing imports
+from extensions.history_ui import HistoryUI
 
 # Set a reasonable maximum image size limit (adjust as needed)
 # This is approximately 4 times the default limit
@@ -1179,14 +1182,16 @@ class ImageEditorApp(ctk.CTk):
         self.fit_mode = load_global_preferences() or "fit"
         init_db()
 
-        last_path = load_global_preferences("last_opened_path")
-        if last_path and os.path.exists(last_path):
-            self.threaded_load_image(last_path)
-
         # Adiciona variável para a janela de monitoramento
         self.monitor_window = None
 
+        # Cria a interface
         self.create_ui()
+
+        # Inicializa o gerenciador de histórico (APENAS UMA VEZ)
+        self.history_ui = HistoryUI(self, DB_PATH)
+
+        # Configuração de binds
         self.bind("<Configure>", self.on_resize)
         self.bind("<Control-plus>", lambda e: self.zoom_in())
         self.bind("<Control-equal>", lambda e: self.zoom_in())
@@ -1197,6 +1202,11 @@ class ImageEditorApp(ctk.CTk):
         self.bind("<Tab>", self.toggle_menu)  # Adiciona bind para TAB
         self.protocol("WM_DELETE_WINDOW", self.on_exit)
 
+        # Carrega a última imagem aberta, se existir
+        last_path = load_global_preferences("last_opened_path")
+        if last_path and os.path.exists(last_path):
+            self.threaded_load_image(last_path)
+    
     def toggle_menu(self, event=None):
         """Alterna a visibilidade do menu lateral"""
         if not hasattr(self, 'toolbar_container') or not self.toolbar_container:
@@ -1759,6 +1769,36 @@ class ImageEditorApp(ctk.CTk):
         separator1 = ctk.CTkFrame(self.toolbar, height=2, width=180)
         separator1.grid(row=current_row, column=0, pady=10, padx=10)
         current_row += 1
+
+        # Seção de histórico - Verificamos se o history_ui foi inicializado
+        if hasattr(self, 'history_ui'):
+            # Separador para histórico
+            separator_history = ctk.CTkFrame(self.toolbar, height=2, width=180)
+            separator_history.grid(row=current_row, column=0, pady=10, padx=10)
+            current_row += 1
+
+            # Botões de histórico
+            history_label = ctk.CTkLabel(self.toolbar, text="📜 Histórico")
+            history_label.grid(row=current_row, column=0, pady=(10, 0), padx=5, sticky="w")
+            current_row += 1
+
+            undo_button = ctk.CTkButton(self.toolbar, text="↩️ Desfazer", command=self.history_ui.history_manager.undo)
+            undo_button.grid(row=current_row, column=0, pady=5, padx=5)
+            current_row += 1
+
+            redo_button = ctk.CTkButton(self.toolbar, text="↪️ Refazer", command=self.history_ui.history_manager.redo)
+            redo_button.grid(row=current_row, column=0, pady=5, padx=5)
+            current_row += 1
+
+            history_window_button = ctk.CTkButton(self.toolbar, text="📋 Ver Histórico", 
+            command=self.history_ui.history_manager.show_history_window)
+            history_window_button.grid(row=current_row, column=0, pady=5, padx=5)
+            current_row += 1
+            
+            # Separador após histórico
+            separator_after_history = ctk.CTkFrame(self.toolbar, height=2, width=180)
+            separator_after_history.grid(row=current_row, column=0, pady=10, padx=10)
+            current_row += 1
         
         # Botões de navegação
         prev_button = ctk.CTkButton(self.toolbar, text="⬅ Anterior", command=self.prev_image)
@@ -2453,6 +2493,21 @@ class ImageEditorApp(ctk.CTk):
             self.status_bar.configure(text="Nenhuma imagem carregada")
             self.title("PixelArt Image Editor - Nenhuma Imagem")
             self.update_status_bar()
+
+    # Modify the apply_filter method to record actions in the history
+    def apply_filter(self, filter_name, **kwargs):
+        if not self.loaded_image:
+            return
+            
+        # Save the current state before applying the filter
+        if hasattr(self, 'history_ui'):
+            self.history_ui.history_manager.create_restoration_point(f"Before {filter_name}")
+        
+        # ... existing filter application code ...
+        
+        # Record the action in history
+        if hasattr(self, 'history_ui'):
+            self.history_ui.history_manager.add_action('filter', {'name': filter_name, 'params': kwargs}, f"Applied filter: {filter_name}")
 
     def show_create_image(self):
         """Mostra a janela de criação de imagem"""
