@@ -40,7 +40,7 @@ Baseado no seu código atual, aqui estão algumas sugestões para novas funciona
    - Exportação para sprites/tileset com especificações de jogo
    - Geração de imagens para diferentes resoluções
 
-9. **Histórico Avançado**:
+9. **Histórico Avançado**: (ainda esta com problemas)
    - Sistema de desfazer/refazer com mais passos
    - Visualização do histórico de alterações
    - Salvar pontos de restauração
