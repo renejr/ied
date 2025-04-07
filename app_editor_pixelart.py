@@ -1,7 +1,9 @@
 import customtkinter as ctk
 from tkinter import filedialog, messagebox
 from PIL import Image, ImageTk, UnidentifiedImageError, ImageFile, ImageGrab
+import tempfile
 import os
+import platform  # Importa o módulo platform
 import time
 import threading
 import sqlite3
@@ -1135,6 +1137,696 @@ class CreateImageWindow(ctk.CTkToplevel):
         except Exception as e:
             print(f"Erro ao parar captura: {e}")
 
+class CreateImageWindow(ctk.CTkToplevel):
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.title("Criar Imagem")
+        self.geometry("500x300")
+        self.parent = parent
+        
+        # Configurações da janela
+        self.resizable(False, False)
+        self.configure(fg_color=THUMB_WINDOW_BACKGROUND_COLOR)
+        
+        # Frame principal
+        self.main_frame = ctk.CTkFrame(self, fg_color=THUMB_WINDOW_BACKGROUND_COLOR)
+        self.main_frame.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        # Label de título
+        title = ctk.CTkLabel(
+            self.main_frame,
+            text="Criar Nova Imagem",
+            font=("Arial", 16, "bold"),
+            text_color=THUMB_TEXT_COLOR
+        )
+        title.pack(pady=(0, 20))
+        
+        # Frame para opções
+        options_frame = ctk.CTkFrame(self.main_frame, fg_color=THUMB_WINDOW_BACKGROUND_COLOR)
+        options_frame.pack(fill="x", pady=5)
+        
+        # Botão para criar a partir de URL
+        url_button = ctk.CTkButton(
+            options_frame,
+            text="🌐 Criar a partir de URL",
+            command=self.show_url_input
+        )
+        url_button.pack(fill="x", pady=5)
+        
+        # Botão para criar a partir do clipboard
+        clipboard_button = ctk.CTkButton(
+            options_frame,
+            text="📋 Criar a partir do Clipboard",
+            command=self.create_from_clipboard
+        )
+        clipboard_button.pack(fill="x", pady=5)
+
+        # Botão para criar a partir de dispositivos de captura
+        capture_button = ctk.CTkButton(
+            options_frame,
+            text="📷 Criar a partir de Dispositivos de Captura",
+            command=self.show_capture_devices
+        )
+        capture_button.pack(fill="x", pady=5)
+
+        # Variáveis para captura
+        self.capture_devices = []
+        self.selected_device = None
+        self.cap = None
+        
+        # Status label
+        self.status_label = ctk.CTkLabel(
+            self.main_frame,
+            text="",
+            font=("Arial", 12),
+            text_color=THUMB_TEXT_COLOR
+        )
+        self.status_label.pack(pady=10)
+        
+    def show_url_input(self):
+        """Mostra o frame para entrada de URL"""
+        # Remove widgets existentes
+        for widget in self.main_frame.winfo_children():
+            widget.destroy()
+            
+        # Label de título
+        title = ctk.CTkLabel(
+            self.main_frame,
+            text="Criar a partir de URL",
+            font=("Arial", 16, "bold"),
+            text_color=THUMB_TEXT_COLOR
+        )
+        title.pack(pady=(0, 20))
+        
+        # Frame para URL
+        url_frame = ctk.CTkFrame(self.main_frame, fg_color=THUMB_WINDOW_BACKGROUND_COLOR)
+        url_frame.pack(fill="x", pady=5)
+        
+        # Label URL
+        url_label = ctk.CTkLabel(
+            url_frame,
+            text="URL da Imagem:",
+            font=("Arial", 12),
+            text_color=THUMB_TEXT_COLOR
+        )
+        url_label.pack(anchor="w")
+        
+        # Entry para URL
+        self.url_entry = ctk.CTkEntry(
+            url_frame,
+            width=400,
+            placeholder_text="Cole a URL da imagem aqui"
+        )
+        self.url_entry.pack(fill="x", pady=5)
+        
+        # Botão criar
+        create_button = ctk.CTkButton(
+            self.main_frame,
+            text="Criar Imagem",
+            command=self.create_image_from_url
+        )
+        create_button.pack(pady=20)
+        
+        # Status label
+        self.status_label = ctk.CTkLabel(
+            self.main_frame,
+            text="",
+            font=("Arial", 12),
+            text_color=THUMB_TEXT_COLOR
+        )
+        self.status_label.pack(pady=10)
+        
+    def create_from_clipboard(self):
+        """Cria uma imagem a partir do conteúdo do clipboard"""
+        try:
+            # Tenta obter a imagem do clipboard
+            clipboard_image = ImageGrab.grabclipboard()
+            
+            if clipboard_image is None:
+                self.status_label.configure(text="Nenhuma imagem encontrada no clipboard", text_color="red")
+                return
+                
+            # Verifica se é uma imagem válida
+            if not isinstance(clipboard_image, Image.Image):
+                self.status_label.configure(text="Conteúdo do clipboard não é uma imagem válida", text_color="red")
+                return
+                
+            # Converte para base64
+            buffered = BytesIO()
+            clipboard_image.save(buffered, format="PNG")
+            img_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
+            
+            # Salva no banco de dados
+            conn = sqlite3.connect(DB_PATH)
+            try:
+                cur = conn.cursor()
+                cur.execute(
+                    "INSERT INTO imagens_criadas (fonte, img_base64) VALUES (?, ?)",
+                    ("clipboard", img_base64)
+                )
+                conn.commit()
+            finally:
+                conn.close()
+                
+            # Atualiza a interface
+            self.parent.loaded_image = clipboard_image
+            self.parent.image_path = None  # Indica que é uma imagem em memória
+            self.parent.image_modified = True
+            self.parent.display_image()
+            self.parent.update_status_bar()
+            
+            # Fecha a janela
+            self.destroy()
+            
+        except Exception as e:
+            self.status_label.configure(text=f"Erro ao criar imagem: {str(e)}", text_color="red")
+
+    def is_valid_image_url(self, url):
+        """Valida se a URL aponta para uma imagem válida"""
+        try:
+            # Verifica se a URL é válida
+            parsed = urlparse(url)
+            if not all([parsed.scheme, parsed.netloc]):
+                return False
+                
+            # Verifica a extensão do arquivo
+            path = parsed.path.lower()
+            valid_extensions = ('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp', '.tiff', '.ico')
+            if not any(path.endswith(ext) for ext in valid_extensions):
+                return False
+                
+            return True
+        except:
+            return False
+            
+    def validate_image_header(self, response):
+        """Valida se o conteúdo é realmente uma imagem"""
+        content_type = response.headers.get('content-type', '')
+        return content_type.startswith('image/')
+        
+    def create_image_from_url(self):
+        """Cria uma imagem a partir da URL fornecida"""
+        url = self.url_entry.get().strip()
+        
+        if not url:
+            self.status_label.configure(text="Por favor, insira uma URL", text_color="red")
+            return
+            
+        if not self.is_valid_image_url(url):
+            self.status_label.configure(text="URL INVÁLIDA", text_color="red")
+            return
+            
+        try:
+            # Configura o status
+            self.status_label.configure(text="Baixando imagem...", text_color=THUMB_TEXT_COLOR)
+            self.update_idletasks()
+            
+            # Faz o download da imagem
+            response = requests.get(url, timeout=10)
+            
+            # Verifica se o download foi bem sucedido
+            if response.status_code != 200:
+                self.status_label.configure(text="Erro ao baixar imagem", text_color="red")
+                return
+                
+            # Valida o header da resposta
+            if not self.validate_image_header(response):
+                self.status_label.configure(text="TIPO DE ARQUIVO INVÁLIDO", text_color="red")
+                return
+                
+            # Converte para base64
+            img_base64 = base64.b64encode(response.content).decode('utf-8')
+            
+            # Salva no banco de dados
+            conn = sqlite3.connect(DB_PATH)
+            try:
+                cur = conn.cursor()
+                cur.execute(
+                    "INSERT INTO imagens_criadas (fonte, img_base64) VALUES (?, ?)",
+                    (url, img_base64)
+                )
+                conn.commit()
+            finally:
+                conn.close()
+                
+            # Carrega a imagem na memória
+            img = Image.open(BytesIO(response.content))
+            
+            # Atualiza a interface
+            self.parent.loaded_image = img
+            self.parent.image_path = None  # Indica que é uma imagem em memória
+            self.parent.image_modified = True
+            self.parent.display_image()
+            self.parent.update_status_bar()
+            
+            # Fecha a janela
+            self.destroy()
+            
+        except requests.RequestException as e:
+            self.status_label.configure(text=f"Erro na requisição: {str(e)}", text_color="red")
+        except Exception as e:
+            self.status_label.configure(text=f"Erro: {str(e)}", text_color="red")
+
+    def show_capture_devices(self):
+            """Mostra os dispositivos de captura disponíveis"""
+            # Remove widgets existentes
+            for widget in self.main_frame.winfo_children():
+                widget.destroy()
+                
+            # Label de título
+            title = ctk.CTkLabel(
+                self.main_frame,
+                text="Criar a partir de Dispositivos de Captura",
+                font=("Arial", 16, "bold"),
+                text_color=THUMB_TEXT_COLOR
+            )
+            title.pack(pady=(0, 20))
+            
+            # Frame para dispositivos
+            devices_frame = ctk.CTkFrame(self.main_frame, fg_color=THUMB_WINDOW_BACKGROUND_COLOR)
+            devices_frame.pack(fill="x", pady=5)
+            
+            # Detecta dispositivos disponíveis
+            self.detect_capture_devices()
+            
+            if not self.capture_devices:
+                no_devices_label = ctk.CTkLabel(
+                    devices_frame,
+                    text="Nenhum dispositivo de captura encontrado",
+                    font=("Arial", 12),
+                    text_color="red"
+                )
+                no_devices_label.pack(pady=10)
+            else:
+                # Label para seleção
+                select_label = ctk.CTkLabel(
+                    devices_frame,
+                    text="Selecione um dispositivo:",
+                    font=("Arial", 12),
+                    text_color=THUMB_TEXT_COLOR
+                )
+                select_label.pack(anchor="w", pady=(0, 5))
+                
+                # Combobox para seleção de dispositivo
+                self.device_var = ctk.StringVar(value=self.capture_devices[0][1])
+                device_combo = ctk.CTkComboBox(
+                    devices_frame,
+                    values=[device[1] for device in self.capture_devices],
+                    variable=self.device_var,
+                    width=400
+                )
+                device_combo.pack(fill="x", pady=5)
+                
+                # Botão para iniciar captura
+                capture_button = ctk.CTkButton(
+                    self.main_frame,
+                    text="Iniciar Captura",
+                    command=self.start_capture
+                )
+                capture_button.pack(pady=20)
+            
+            # Botão para voltar
+            back_button = ctk.CTkButton(
+                self.main_frame,
+                text="Voltar",
+                command=self.__init__
+            )
+            back_button.pack(pady=(10, 0))
+            
+            # Status label
+            self.status_label = ctk.CTkLabel(
+                self.main_frame,
+                text="",
+                font=("Arial", 12),
+                text_color=THUMB_TEXT_COLOR
+            )
+            self.status_label.pack(pady=10)
+
+    def detect_capture_devices(self):
+        """Detecta dispositivos de captura disponíveis"""
+        self.capture_devices = []
+
+        try:
+            # Detecta câmeras
+            for i in range(3):
+                try:
+                    cap = cv2.VideoCapture(i, cv2.CAP_ANY)
+                    if cap is not None and cap.isOpened():
+                        ret, _ = cap.read()
+                        if ret:
+                            name = f"Câmera {i}"
+                            self.capture_devices.append((i, name))
+                        cap.release()
+                        time.sleep(0.2)
+                except Exception as device_error:
+                    print(f"Aviso: Erro ao verificar dispositivo {i}: {device_error}")
+                    continue
+
+            # Tenta detectar scanners usando métodos alternativos
+            try:
+                    # Método 1: Tentar usar WIA (Windows Image Acquisition) para Windows
+                    try:
+                        print("Tentando usar WIA para scanners")
+                        wia = win32com.client.Dispatch("WIA.CommonDialog")
+                        # Apenas registramos a disponibilidade do WIA
+                        self.capture_devices.append(("wia:scanner", "Scanner (WIA)"))
+                    except ImportError:
+                        print("Módulo win32com não disponível para WIA.")
+                    except Exception as wia_error:
+                        print(f"Erro ao inicializar WIA: {wia_error}")
+            except Exception as scanner_error:
+                print(f"Erro ao detectar scanners: {scanner_error}")
+
+            if not self.capture_devices:
+                if hasattr(self, 'status_label') and self.status_label.winfo_exists():
+                    self.status_label.configure(
+                        text="Nenhum dispositivo de captura encontrado ou disponível",
+                        text_color="red"
+                    )
+
+        except Exception as e:
+            print(f"Erro geral na detecção de dispositivos: {e}")
+            if hasattr(self, 'status_label') and self.status_label.winfo_exists():
+                self.status_label.configure(
+                    text=f"Erro ao detectar dispositivos: {str(e)}",
+                    text_color="red"
+                )
+
+    def start_capture(self):
+        """Inicia a captura do dispositivo selecionado"""
+        try:
+            # Obtém o índice do dispositivo selecionado
+            selected_name = self.device_var.get()
+            selected_device = next(device for device, name in self.capture_devices if name == selected_name)
+            
+            # Limpa a interface
+            for widget in self.main_frame.winfo_children():
+                widget.destroy()
+            
+            # Aumenta o tamanho da janela para acomodar todos os elementos
+            self.geometry("500x500")  # Aumentando a altura da janela
+            
+            # Cria nova interface para captura
+            title = ctk.CTkLabel(
+                self.main_frame,
+                text=f"Capturando de: {selected_name}",
+                font=("Arial", 16, "bold"),
+                text_color=THUMB_TEXT_COLOR
+            )
+            title.pack(pady=(0, 10))
+            
+            # Frame para preview
+            preview_frame = ctk.CTkFrame(
+                self.main_frame,
+                fg_color=THUMB_WINDOW_BACKGROUND_COLOR,
+                width=400,
+                height=300
+            )
+            preview_frame.pack(pady=5)
+            preview_frame.pack_propagate(False)
+            
+            # Label para preview
+            self.preview_label = ctk.CTkLabel(
+                preview_frame,
+                text="Iniciando dispositivo...",
+                font=("Arial", 12),
+                text_color=THUMB_TEXT_COLOR
+            )
+            self.preview_label.place(relx=0.5, rely=0.5, anchor="center")
+            
+            # Botão para capturar imagem
+            capture_img_button = ctk.CTkButton(
+                self.main_frame,
+                text="📸 CAPTURAR IMAGEM",
+                command=self.capture_image,
+                fg_color="#28a745",
+                hover_color="#218838",
+                height=40
+            )
+            capture_img_button.pack(pady=10, fill="x", padx=20)
+            
+            # Botões de controle
+            buttons_frame = ctk.CTkFrame(self.main_frame, fg_color=THUMB_WINDOW_BACKGROUND_COLOR)
+            buttons_frame.pack(fill="x", pady=5, padx=20)
+            
+            # Botão para cancelar
+            cancel_button = ctk.CTkButton(
+                buttons_frame,
+                text="❌ Cancelar",
+                command=self.stop_capture
+            )
+            cancel_button.pack(side="right", padx=5, expand=True, fill="x")
+            
+            # Status label
+            self.status_label = ctk.CTkLabel(
+                self.main_frame,
+                text="Aguardando captura...",
+                font=("Arial", 12),
+                text_color=THUMB_TEXT_COLOR
+            )
+            self.status_label.pack(pady=5)
+            
+            # Verifica o tipo de dispositivo e inicia a captura apropriada
+            if isinstance(selected_device, int):
+                # Câmera
+                self.selected_device = selected_device
+                self.capture_running = True
+                threading.Thread(target=self.update_preview, daemon=True).start()
+            elif isinstance(selected_device, str) and selected_device.startswith("scanner:"):
+                # Scanner TWAIN
+                self.status_label.configure(text="Iniciando scanner TWAIN...", text_color=THUMB_TEXT_COLOR)
+                self.selected_device = selected_device
+                # Não iniciamos preview para scanner, apenas habilitamos o botão de captura
+            elif isinstance(selected_device, str) and selected_device.startswith("wia:"):
+                # Scanner WIA
+                self.status_label.configure(text="Iniciando scanner WIA...", text_color=THUMB_TEXT_COLOR)
+                self.selected_device = selected_device
+                # Não iniciamos preview para scanner, apenas habilitamos o botão de captura
+                
+        except Exception as e:
+            self.status_label.configure(text=f"Erro ao iniciar captura: {str(e)}", text_color="red")    
+
+
+    def update_preview(self):
+        """Atualiza o preview da câmera"""
+        try:
+            # Inicializa a captura
+            self.cap = cv2.VideoCapture(self.selected_device)
+            
+            if not self.cap.isOpened():
+                self.after(0, lambda: self.status_label.configure(
+                    text="Não foi possível abrir o dispositivo de captura", 
+                    text_color="red"
+                ) if hasattr(self, 'status_label') else None)
+                return
+            
+            # Loop de captura
+            while self.capture_running and hasattr(self, 'preview_label'):
+                ret, frame = self.cap.read()
+                
+                if not ret:
+                    break
+                
+                # Converte o frame para formato PIL
+                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                pil_img = Image.fromarray(frame_rgb)
+                
+                # Redimensiona para caber no preview
+                pil_img.thumbnail((380, 280))
+                
+                # Converte para CTkImage
+                ctk_img = CTkImage(light_image=pil_img, dark_image=pil_img, size=pil_img.size)
+                
+                # Atualiza o preview na thread principal, mas verifica se a janela ainda existe
+                if hasattr(self, 'preview_label') and self.winfo_exists():
+                    self.after(0, lambda img=ctk_img: self.update_preview_ui_safe(img))
+                else:
+                    # Janela foi fechada, interrompe o loop
+                    break
+                
+                # Pequena pausa para não sobrecarregar
+                time.sleep(0.03)
+            
+            # Libera recursos
+            if self.cap:
+                self.cap.release()
+                
+        except Exception as e:
+            if hasattr(self, 'status_label') and self.winfo_exists():
+                self.after(0, lambda: self.status_label.configure(
+                    text=f"Erro na captura: {str(e)}", 
+                    text_color="red"
+                ))
+            print(f"Erro na captura: {str(e)}")
+        
+    def update_preview_ui_safe(self, img):
+        """Atualiza a UI com a imagem de preview de forma segura"""
+        try:
+            if hasattr(self, 'preview_label') and self.preview_label.winfo_exists():
+                self.preview_label.configure(image=img, text="")
+                # Mantém referência para evitar coleta de lixo
+                self.preview_label.image = img
+        except Exception as e:
+            print(f"Erro ao atualizar preview: {str(e)}")
+    
+    def capture_image(self):
+        """Captura a imagem atual e a processa"""
+        try:
+            captured_image = None
+            device_name = next(name for device, name in self.capture_devices if device == self.selected_device)
+            
+            if isinstance(self.selected_device, int):
+                # Câmera
+                if not self.cap or not self.cap.isOpened():
+                    self.status_label.configure(text="Dispositivo de captura não disponível", text_color="red")
+                    return
+                    
+                # Captura um frame
+                ret, frame = self.cap.read()
+                
+                if not ret:
+                    self.status_label.configure(text="Falha ao capturar imagem", text_color="red")
+                    return
+                
+                # Converte para PIL
+                frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                captured_image = Image.fromarray(frame_rgb)
+                
+            elif isinstance(self.selected_device, str) and self.selected_device.startswith("scanner:"):
+                # Scanner TWAIN
+                try:
+                    import twain
+                    self.status_label.configure(text="Abrindo scanner TWAIN...", text_color=THUMB_TEXT_COLOR)
+                    
+                    # Extrai o índice do scanner
+                    scanner_index = int(self.selected_device.split(":")[1])
+                    
+                    # Inicializa o gerenciador TWAIN
+                    sm = twain.SourceManager(0)
+                    scanner = sm.OpenSource(sm.GetSourceList()[scanner_index])
+                    
+                    # Configura e inicia a digitalização
+                    scanner.SetCapability(twain.ICAP_PIXELTYPE, twain.TWTY_UINT16, twain.TWPT_RGB)
+                    scanner.RequestAcquire(0, 0)  # UI visível
+                    
+                    # Obtém a imagem
+                    info = scanner.GetImageInfo()
+                    handle = scanner.XferImageNatively()
+                    
+                    if handle:
+                        twain_img = twain.DIBToBMFile(handle[0], "temp_scan.bmp")
+                        captured_image = Image.open("temp_scan.bmp")
+                        os.remove("temp_scan.bmp")  # Remove o arquivo temporário
+                    
+                    # Fecha o scanner
+                    scanner.destroy()
+                    sm.destroy()
+                    
+                except Exception as twain_error:
+                    self.status_label.configure(text=f"Erro TWAIN: {str(twain_error)}", text_color="red")
+                    print(f"Erro detalhado TWAIN: {twain_error}")
+                    return
+                    
+            elif isinstance(self.selected_device, str) and self.selected_device.startswith("wia:"):
+                # Scanner WIA
+                try:
+                    import win32com.client
+                    self.status_label.configure(text="Abrindo scanner WIA...", text_color=THUMB_TEXT_COLOR)
+                    
+                    # Inicializa o diálogo WIA
+                    wia = win32com.client.Dispatch("WIA.CommonDialog")
+                    device = wia.ShowSelectDevice()
+                    if device:
+                        # Inicia a digitalização
+                        item = device.Items(1)
+                        img = wia.ShowTransfer(item)
+                        
+                        # Salva temporariamente e carrega com PIL
+                        temp_path = os.path.join(os.environ['TEMP'], "temp_scan_wia.jpg")
+                        img.SaveFile(temp_path)
+                        captured_image = Image.open(temp_path)
+                        os.remove(temp_path)  # Remove o arquivo temporário
+                        
+                except Exception as wia_error:
+                    self.status_label.configure(text=f"Erro WIA: {str(wia_error)}", text_color="red")
+                    print(f"Erro detalhado WIA: {wia_error}")
+                    return
+            
+            if not captured_image:
+                self.status_label.configure(text="Falha ao obter imagem do dispositivo", text_color="red")
+                return
+                
+            # Converte para base64
+            buffered = BytesIO()
+            captured_image.save(buffered, format="PNG")
+            img_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
+            
+            # Salva no banco de dados
+            conn = sqlite3.connect(DB_PATH)
+            try:
+                cur = conn.cursor()
+                cur.execute(
+                    "INSERT INTO imagens_criadas (fonte, img_base64) VALUES (?, ?)",
+                    (f"device:{device_name}", img_base64)
+                )
+                conn.commit()
+            finally:
+                conn.close()
+            
+            # Para a captura se for câmera
+            if isinstance(self.selected_device, int):
+                self.capture_running = False
+                if self.cap:
+                    self.cap.release()
+                    self.cap = None
+            
+            # Atualiza a interface principal
+            self.parent.loaded_image = captured_image
+            self.parent.image_path = None  # Indica que é uma imagem em memória
+            self.parent.image_modified = True
+            self.parent.display_image()
+            self.parent.update_status_bar()
+            
+            # Fecha a janela
+            self.destroy()
+            
+        except Exception as e:
+            self.status_label.configure(text=f"Erro ao processar imagem: {str(e)}", text_color="red")
+            print(f"Erro detalhado: {e}")
+
+
+    def stop_capture(self):
+        """Para a captura e volta ao menu principal"""
+        try:
+            # Primeiro, sinalizamos que a captura deve parar
+            self.capture_running = False
+            
+            # Aguarda um pouco para garantir que o thread de captura perceba a mudança
+            time.sleep(0.2)  # Aumentado para dar mais tempo ao thread
+            
+            # Libera os recursos da câmera de forma segura
+            if hasattr(self, 'cap') and self.cap is not None:
+                try:
+                    self.cap.release()
+                except Exception as e:
+                    print(f"Aviso: Erro ao liberar câmera: {e}")
+                finally:
+                    self.cap = None
+            
+            # Volta para o menu principal se a janela ainda existir
+            if self.winfo_exists():
+                # Limpa a interface atual
+                for widget in self.main_frame.winfo_children():
+                    widget.destroy()
+                    
+                # Reinicializa a interface com o parent correto
+                self.__init__(self.parent)
+                
+                # Atualiza a interface para garantir que tudo seja recarregado corretamente
+                self.update_idletasks()
+        except Exception as e:
+            print(f"Erro ao parar captura: {e}")
+
 class ImageEditorApp(ctk.CTk):
     def __init__(self):
         super().__init__()
@@ -1206,6 +1898,7 @@ class ImageEditorApp(ctk.CTk):
         last_path = load_global_preferences("last_opened_path")
         if last_path and os.path.exists(last_path):
             self.threaded_load_image(last_path)
+    
     
     def toggle_menu(self, event=None):
         """Alterna a visibilidade do menu lateral"""
@@ -1764,6 +2457,10 @@ class ImageEditorApp(ctk.CTk):
         save_as_button = ctk.CTkButton(self.toolbar, text="💾 Salvar como", command=self.save_image_as)
         save_as_button.grid(row=current_row, column=0, pady=5, padx=5)
         current_row += 1
+
+        close_image_button = ctk.CTkButton(self.toolbar, text="❌ Fechar imagem", command=self.close_image)
+        close_image_button.grid(row=current_row, column=0, pady=5, padx=5)
+        current_row += 1
         
         # Separador 1
         separator1 = ctk.CTkFrame(self.toolbar, height=2, width=180)
@@ -1800,6 +2497,11 @@ class ImageEditorApp(ctk.CTk):
             separator_after_history.grid(row=current_row, column=0, pady=10, padx=10)
             current_row += 1
         
+        # Botão de imprimir
+        print_button = ctk.CTkButton(self.toolbar, text="🖨️ Imprimir", command=self.print_image)  # Adicione este botão
+        print_button.grid(row=current_row, column=0, pady=5, padx=5)
+        current_row += 1
+
         # Botões de navegação
         prev_button = ctk.CTkButton(self.toolbar, text="⬅ Anterior", command=self.prev_image)
         prev_button.grid(row=current_row, column=0, pady=5, padx=5)
@@ -1835,17 +2537,17 @@ class ImageEditorApp(ctk.CTk):
         
         # Botões de ajuste
         adjust_width_button = ctk.CTkButton(self.toolbar, text="↔ Ajustar largura", 
-                                           command=lambda: self.set_fit_mode("width"))
+        command=lambda: self.set_fit_mode("width"))
         adjust_width_button.grid(row=current_row, column=0, pady=5, padx=5)
         current_row += 1
         
         adjust_height_button = ctk.CTkButton(self.toolbar, text="↕ Ajustar altura", 
-                                          command=lambda: self.set_fit_mode("height"))
+        command=lambda: self.set_fit_mode("height"))
         adjust_height_button.grid(row=current_row, column=0, pady=5, padx=5)
         current_row += 1
         
         adjust_screen_button = ctk.CTkButton(self.toolbar, text="🖥 Ajustar tela", 
-                                           command=lambda: self.set_fit_mode("fit"))
+        command=lambda: self.set_fit_mode("fit"))
         adjust_screen_button.grid(row=current_row, column=0, pady=5, padx=5)
         current_row += 1
         
@@ -1892,11 +2594,6 @@ class ImageEditorApp(ctk.CTk):
         # Separador 6
         separator6 = ctk.CTkFrame(self.toolbar, height=2, width=180)
         separator6.grid(row=current_row, column=0, pady=10, padx=10)
-        current_row += 1
-        
-        # Botão Fechar Imagem
-        close_image_button = ctk.CTkButton(self.toolbar, text="❌ Fechar imagem", command=self.close_image)
-        close_image_button.grid(row=current_row, column=0, pady=5, padx=5)
         current_row += 1
         
         # Botão Sair
@@ -2513,7 +3210,32 @@ class ImageEditorApp(ctk.CTk):
         """Mostra a janela de criação de imagem"""
         if hasattr(self, 'create_window') and self.create_window is not None:
             self.create_window.destroy()
-        self.create_window = CreateImageWindow(self)
+        self.create_window = CreateImageWindow(self)            
+
+    def print_image(self):
+        """Print the currently loaded image."""
+        if self.loaded_image is None:
+            messagebox.showerror("Erro", "Nenhuma imagem carregada para imprimir.")
+            return
+
+        # Convert the image to a format suitable for printing
+        try:
+            # Convert to RGB if not already in that mode
+            if self.loaded_image.mode != "RGB":
+                image_to_print = self.loaded_image.convert("RGB")
+            else:
+                image_to_print = self.loaded_image
+
+            # Save the image to a temporary file
+            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
+            image_to_print.save(temp_file.name, "PNG")
+            temp_file.close()
+
+            # Use the default printer to print the image
+            os.startfile(temp_file.name, "print")
+
+        except Exception as e:
+            messagebox.showerror("Erro de Impressão", f"Erro ao tentar imprimir a imagem: {e}")
 
 if __name__ == "__main__":
     app = ImageEditorApp()
