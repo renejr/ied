@@ -7,18 +7,15 @@ def adjust_brightness(image, factor):
     enhancer = ImageEnhance.Brightness(image)
     return enhancer.enhance(factor)
 
-
 def adjust_contrast(image, factor):
     """Adjust the contrast of the image."""
     enhancer = ImageEnhance.Contrast(image)
     return enhancer.enhance(factor)
 
-
 def adjust_saturation(image, factor):
     """Adjust the saturation of the image."""
     enhancer = ImageEnhance.Color(image)
     return enhancer.enhance(factor)
-
 
 def adjust_sharpness(image, factor):
     """Adjust the sharpness of the image."""
@@ -26,11 +23,9 @@ def adjust_sharpness(image, factor):
     return enhancer.enhance(factor)
 
 # Filtros artísticos
-
 def apply_grayscale(image):
     """Convert the image to grayscale."""
     return image.convert("L")
-
 
 def apply_sepia(image):
     """Apply a sepia filter to the image."""
@@ -59,11 +54,9 @@ def apply_sepia(image):
 
     return sepia_image
 
-
 def apply_negative(image):
     """Apply a negative filter to the image."""
     return ImageOps.invert(image.convert("RGB"))
-
 
 def apply_pixelate(image, pixel_size):
     """Apply a pixelation effect to the image."""
@@ -71,7 +64,6 @@ def apply_pixelate(image, pixel_size):
     return small.resize(image.size, Image.NEAREST)
 
 # Efeitos vintage/retro
-
 def apply_vintage(image):
     """Apply a vintage effect to the image."""
     # This is a placeholder for a more complex vintage effect
