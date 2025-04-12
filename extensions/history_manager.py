@@ -182,7 +182,6 @@ class HistoryManager:
         conn = sqlite3.connect(self.db_path)
         try:
             cur = conn.cursor()
-            
             # Conta quantas ações existem para esta imagem
             cur.execute("SELECT COUNT(*) FROM history_actions WHERE image_id = ?", (self.current_image_id,))
             count = cur.fetchone()[0]
@@ -214,6 +213,10 @@ class HistoryManager:
         finally:
             conn.close()
     
+    def add_to_history(self, action_type, action_data=None, description=None):
+        """Alias para add_action, mantido para compatibilidade"""
+        self.add_action(action_type, action_data, description)
+            
     def undo(self):
         """Desfaz a última ação"""
         if self.action_in_progress or not self.current_image_id or self.current_position <= 0:

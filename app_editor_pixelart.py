@@ -1,4 +1,5 @@
 import customtkinter as ctk
+import tkinter as tk  # Adicione esta importação
 from tkinter import filedialog, messagebox
 from PIL import Image, ImageTk, UnidentifiedImageError, ImageFile, ImageGrab
 import tempfile
@@ -54,6 +55,7 @@ import re
 from urllib.parse import urlparse
 # Add these imports at the top of the file, after the existing imports
 from extensions.history_ui import HistoryUI
+import image_filters
 
 # Set a reasonable maximum image size limit (adjust as needed)
 # This is approximately 4 times the default limit
@@ -241,6 +243,175 @@ class MonitorWindow(ctk.CTkToplevel):
         finally:
             # Agenda próxima atualização
             self.after(self.update_interval, self.update_info)
+
+class FiltersWindow(ctk.CTkToplevel):
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.parent = parent
+        self.title("Filtros de Imagem")
+        self.geometry("300x600")
+        self.configure(fg_color=THUMB_WINDOW_BACKGROUND_COLOR)
+        
+        # Frame principal
+        main_frame = ctk.CTkFrame(self, fg_color=THUMB_WINDOW_BACKGROUND_COLOR)
+        main_frame.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        # Frame para os controles deslizantes
+        self.sliders_frame = ctk.CTkFrame(main_frame, fg_color=THUMB_WINDOW_BACKGROUND_COLOR)
+        self.sliders_frame.pack(fill="x", padx=5, pady=5)
+        
+        # Criar controles deslizantes
+        self.create_sliders()
+        
+        # Frame para botões de efeitos básicos
+        basic_effects_frame = ctk.CTkFrame(main_frame, fg_color=THUMB_WINDOW_BACKGROUND_COLOR)
+        basic_effects_frame.pack(fill="x", padx=5, pady=5)
+        
+        # Título para efeitos básicos
+        basic_title = ctk.CTkLabel(
+            basic_effects_frame,
+            text="Efeitos Básicos",
+            font=("Arial", 12, "bold"),
+            text_color=THUMB_TEXT_COLOR
+        )
+        basic_title.pack(pady=5, anchor="w")
+        
+        # Botões para efeitos básicos
+        basic_effects = [
+            ("grayscale", "Escala de Cinza"),
+            ("sepia", "Sépia"),
+            ("negative", "Negativo")
+        ]
+        
+        for effect_name, label in basic_effects:
+            btn = ctk.CTkButton(
+                basic_effects_frame,
+                text=label,
+                command=lambda e=effect_name: self.parent.apply_effect(e)
+            )
+            btn.pack(fill="x", padx=5, pady=2)
+            
+    def create_sliders(self):
+        """Cria os controles deslizantes para ajustes"""
+        # Configurações dos sliders
+        sliders_config = [
+            ("brightness", "Brilho", 0.0, 2.0),
+            ("contrast", "Contraste", 0.0, 2.0),
+            ("saturation", "Saturação", 0.0, 2.0),
+            ("sharpness", "Nitidez", 0.0, 2.0)
+        ]
+        
+        for attr, label, min_val, max_val in sliders_config:
+            # Frame para cada slider
+            frame = ctk.CTkFrame(self.sliders_frame, fg_color=THUMB_WINDOW_BACKGROUND_COLOR)
+            frame.pack(fill="x", padx=5, pady=2)
+            
+            # Label
+            lbl = ctk.CTkLabel(
+                frame,
+                text=label,
+                font=("Arial", 12),
+                text_color=THUMB_TEXT_COLOR
+            )
+            lbl.pack(side="left", padx=5)
+            
+            # Slider
+            slider = ctk.CTkSlider(
+                frame,
+                from_=min_val,
+                to=max_val,
+                number_of_steps=100,
+                command=lambda v, a=attr: self.apply_filter(a, v)
+            )
+            slider.pack(side="right", expand=True, fill="x", padx=5)
+            slider.set(1.0)  # Valor padrão
+            
+            # Armazena referência ao slider
+            setattr(self, f"{attr}_slider", slider)
+            
+    def apply_filter(self, filter_name, value):
+        """Aplica o filtro selecionado"""
+        if not self.parent.loaded_image:
+            return
+            
+        try:
+            # Obtém a função do filtro
+            filter_func = getattr(image_filters, f"adjust_{filter_name}")
+            
+            # Aplica o filtro
+            filtered_image = filter_func(self.parent.loaded_image, float(value))
+            
+            # Atualiza a imagem
+            self.parent.update_image(filtered_image)
+            
+        except Exception as e:
+            print(f"Erro ao aplicar filtro {filter_name}: {str(e)}")
+        
+        # Frame para botões de efeitos básicos
+        basic_effects_frame = ctk.CTkFrame(main_frame, fg_color=THUMB_WINDOW_BACKGROUND_COLOR)
+        basic_effects_frame.pack(fill="x", padx=5, pady=5)
+        
+        # Título para efeitos básicos
+        basic_title = ctk.CTkLabel(
+            basic_effects_frame,
+            text="Efeitos Básicos",
+            font=("Arial", 12, "bold"),
+            text_color=THUMB_TEXT_COLOR
+        )
+        basic_title.pack(pady=5, anchor="w")
+        
+        # Botões para efeitos básicos
+        basic_effects = [
+            ("grayscale", "Escala de Cinza"),
+            ("sepia", "Sépia"),
+            ("negative", "Negativo")
+        ]
+        
+        for effect_name, label in basic_effects:
+            btn = ctk.CTkButton(
+                basic_effects_frame,
+                text=label,
+                command=lambda e=effect_name: self.parent.apply_effect(e)
+            )
+            btn.pack(fill="x", padx=5, pady=2)
+        
+        # Frame para outros efeitos
+        other_effects_frame = ctk.CTkFrame(main_frame, fg_color=THUMB_WINDOW_BACKGROUND_COLOR)
+        other_effects_frame.pack(fill="x", padx=5, pady=5)
+        
+        # Título para outros efeitos
+        other_title = ctk.CTkLabel(
+            other_effects_frame,
+            text="Outros Efeitos",
+            font=("Arial", 12, "bold"),
+            text_color=THUMB_TEXT_COLOR
+        )
+        other_title.pack(pady=5, anchor="w")
+        
+        # Botões para outros efeitos
+        self.create_effect_buttons(other_effects_frame)
+
+class ImageFiltersFrame(ctk.CTkFrame):
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.parent = parent
+        self.configure(fg_color=THUMB_WINDOW_BACKGROUND_COLOR)
+        self.filters_window = None
+        
+        # Botão para abrir a janela de filtros
+        self.filters_button = ctk.CTkButton(
+            self,
+            text="🎨 Filtros",
+            command=self.show_filters_window
+        )
+        self.filters_button.pack(fill="x", padx=5, pady=5)
+    
+    def show_filters_window(self):
+        if self.filters_window is None or not self.filters_window.winfo_exists():
+            self.filters_window = FiltersWindow(self)
+            self.filters_window.focus_force()
+        else:
+            self.filters_window.focus_force()
 
 class ColorPaletteWindow(ctk.CTkToplevel):
     def __init__(self, parent, color_freq, color_clusters, quantized_image):
@@ -916,7 +1087,6 @@ class CreateImageWindow(ctk.CTkToplevel):
         except Exception as e:
             self.status_label.configure(text=f"Erro ao iniciar captura: {str(e)}", text_color="red")    
 
-
     def update_preview(self):
         """Atualiza o preview da câmera"""
         try:
@@ -1104,7 +1274,6 @@ class CreateImageWindow(ctk.CTkToplevel):
             self.status_label.configure(text=f"Erro ao processar imagem: {str(e)}", text_color="red")
             print(f"Erro detalhado: {e}")
 
-
     def stop_capture(self):
         """Para a captura e volta ao menu principal"""
         try:
@@ -1192,6 +1361,8 @@ class ImageEditorApp(ctk.CTk):
 
         # Inicializa o gerenciador de histórico (APENAS UMA VEZ)
         self.history_ui = HistoryUI(self, DB_PATH)
+        
+
 
         # Configuração de binds
         self.bind("<Configure>", self.on_resize)
@@ -1209,7 +1380,14 @@ class ImageEditorApp(ctk.CTk):
         if last_path and os.path.exists(last_path):
             self.threaded_load_image(last_path)
     
-    
+    def show_filters_window(self):
+        """Abre a janela de filtros"""
+        if not hasattr(self, 'filters_window') or not self.filters_window or not self.filters_window.winfo_exists():
+            self.filters_window = FiltersWindow(self)
+            self.filters_window.focus_force()
+        else:
+            self.filters_window.focus_force()
+
     def toggle_menu(self, event=None):
         """Alterna a visibilidade do menu lateral"""
         if not hasattr(self, 'toolbar_container') or not self.toolbar_container:
@@ -1703,6 +1881,18 @@ class ImageEditorApp(ctk.CTk):
         self.rotation_angle = 0
         self.rotation_start_angle = 0
         self.rotation_center = None
+    
+        # Adicionando um menu de filtros
+        menu_bar = tk.Menu(self)  # Usando o menu padrão do tkinter
+        self.config(menu=menu_bar)
+
+        filters_menu = tk.Menu(menu_bar, tearoff=0)
+        menu_bar.add_cascade(label="Filtros", menu=filters_menu)
+
+        filters_menu.add_command(label="Escala de Cinza", command=lambda: self.apply_filter("grayscale"))
+        filters_menu.add_command(label="Sepia", command=lambda: self.apply_filter("sepia"))
+        filters_menu.add_command(label="Negativo", command=lambda: self.apply_filter("negative"))
+
 
         # Adicionar widgets no menu lateral
         self.populate_toolbar()
@@ -1886,6 +2076,27 @@ class ImageEditorApp(ctk.CTk):
         separator4.grid(row=current_row, column=0, pady=10, padx=10)
         current_row += 1
         
+        # Separador para filtros
+        separator_filters = ctk.CTkFrame(self.toolbar, height=2, width=180)
+        separator_filters.grid(row=current_row, column=0, pady=10, padx=10)
+        current_row += 1
+
+        # Seção de Filtros
+        filters_label = ctk.CTkLabel(self.toolbar, text="🎨 Filtros")
+        filters_label.grid(row=current_row, column=0, pady=(10, 0), padx=5, sticky="w")
+        current_row += 1
+
+        # Botão para abrir a janela de filtros
+        self.filters_button = ctk.CTkButton(self.toolbar, text="🎨 Filtros", 
+        command=self.show_filters_window)
+        self.filters_button.grid(row=current_row, column=0, pady=5, padx=5)
+        current_row += 1
+
+        # Separador após filtros
+        separator_after_filters = ctk.CTkFrame(self.toolbar, height=2, width=180)
+        separator_after_filters.grid(row=current_row, column=0, pady=10, padx=10)
+        current_row += 1
+
         # Botão Monitor
         monitor_button = ctk.CTkButton(self.toolbar, text="📊 Monitor", command=self.toggle_monitor)
         monitor_button.grid(row=current_row, column=0, pady=5, padx=5)
@@ -2008,6 +2219,21 @@ class ImageEditorApp(ctk.CTk):
         self.display_image()
         self.update_status_bar()
 
+    def update_image(self, image):
+        """Atualiza a imagem e adiciona ao histórico"""
+        if not image:
+            return
+            
+        # Atualiza a imagem carregada
+        self.loaded_image = image
+        
+        # Adiciona ao histórico
+        if hasattr(self, 'history_ui'):
+            self.history_ui.history_manager.add_to_history(image)
+        
+        # Atualiza o canvas
+        self.display_image()
+    
     def display_image(self, image=None):
         """Exibe a imagem no canvas"""
         if image is None and not self.loaded_image:
@@ -2511,6 +2737,17 @@ class ImageEditorApp(ctk.CTk):
             self.history_ui.history_manager.create_restoration_point(f"Before {filter_name}")
         
         # ... existing filter application code ...
+        if self.loaded_image:
+            if filter_name == "grayscale":
+                filtered_image = image_filters.apply_grayscale(self.loaded_image)
+            elif filter_name == "sepia":
+                filtered_image = image_filters.apply_sepia(self.loaded_image)
+            elif filter_name == "negative":
+                filtered_image = image_filters.apply_negative(self.loaded_image)
+            
+            # Atualiza a imagem exibida
+            self.loaded_image = filtered_image
+            self.display_image()
         
         # Record the action in history
         if hasattr(self, 'history_ui'):
