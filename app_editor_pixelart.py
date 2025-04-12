@@ -280,14 +280,17 @@ class FiltersWindow(ctk.CTkToplevel):
         basic_effects = [
             ("grayscale", "Escala de Cinza"),
             ("sepia", "Sépia"),
-            ("negative", "Negativo")
+            ("negative", "Negativo"),
+            ("pixelate", "Pixelação"),
+            ("vintage", "Vintage")
         ]
         
         for effect_name, label in basic_effects:
             btn = ctk.CTkButton(
                 basic_effects_frame,
                 text=label,
-                command=lambda e=effect_name: self.parent.apply_effect(e)
+                # !!! ALTERAÇÃO AQUI: Chama o novo método na classe pai (ImageEditorApp) !!!
+                command=lambda e=effect_name: self.parent.apply_filter_or_effect(e)
             )
             btn.pack(fill="x", padx=5, pady=2)
             
@@ -300,12 +303,12 @@ class FiltersWindow(ctk.CTkToplevel):
             ("saturation", "Saturação", 0.0, 2.0),
             ("sharpness", "Nitidez", 0.0, 2.0)
         ]
-        
+
         for attr, label, min_val, max_val in sliders_config:
             # Frame para cada slider
             frame = ctk.CTkFrame(self.sliders_frame, fg_color=THUMB_WINDOW_BACKGROUND_COLOR)
             frame.pack(fill="x", padx=5, pady=2)
-            
+
             # Label
             lbl = ctk.CTkLabel(
                 frame,
@@ -314,82 +317,31 @@ class FiltersWindow(ctk.CTkToplevel):
                 text_color=THUMB_TEXT_COLOR
             )
             lbl.pack(side="left", padx=5)
-            
+
             # Slider
             slider = ctk.CTkSlider(
                 frame,
                 from_=min_val,
                 to=max_val,
                 number_of_steps=100,
-                command=lambda v, a=attr: self.apply_filter(a, v)
+                # !!! VERIFIQUE E CORRIJA ESTA LINHA !!!
+                command=lambda v, a=attr: self.parent.apply_filter_or_effect(a, value=float(v)) # Use float(v)
             )
             slider.pack(side="right", expand=True, fill="x", padx=5)
             slider.set(1.0)  # Valor padrão
-            
+
             # Armazena referência ao slider
             setattr(self, f"{attr}_slider", slider)
             
-    def apply_filter(self, filter_name, value):
-        """Aplica o filtro selecionado"""
-        if not self.parent.loaded_image:
-            return
+    def apply_effect(self, effect_name):
+        """Aplica o efeito selecionado"""
+        if hasattr(self.parent, 'apply_effect'):
+            self.parent.apply_effect(effect_name)
             
-        try:
-            # Obtém a função do filtro
-            filter_func = getattr(image_filters, f"adjust_{filter_name}")
-            
-            # Aplica o filtro
-            filtered_image = filter_func(self.parent.loaded_image, float(value))
-            
-            # Atualiza a imagem
-            self.parent.update_image(filtered_image)
-            
-        except Exception as e:
-            print(f"Erro ao aplicar filtro {filter_name}: {str(e)}")
-        
-        # Frame para botões de efeitos básicos
-        basic_effects_frame = ctk.CTkFrame(main_frame, fg_color=THUMB_WINDOW_BACKGROUND_COLOR)
-        basic_effects_frame.pack(fill="x", padx=5, pady=5)
-        
-        # Título para efeitos básicos
-        basic_title = ctk.CTkLabel(
-            basic_effects_frame,
-            text="Efeitos Básicos",
-            font=("Arial", 12, "bold"),
-            text_color=THUMB_TEXT_COLOR
-        )
-        basic_title.pack(pady=5, anchor="w")
-        
-        # Botões para efeitos básicos
-        basic_effects = [
-            ("grayscale", "Escala de Cinza"),
-            ("sepia", "Sépia"),
-            ("negative", "Negativo")
-        ]
-        
-        for effect_name, label in basic_effects:
-            btn = ctk.CTkButton(
-                basic_effects_frame,
-                text=label,
-                command=lambda e=effect_name: self.parent.apply_effect(e)
-            )
-            btn.pack(fill="x", padx=5, pady=2)
-        
-        # Frame para outros efeitos
-        other_effects_frame = ctk.CTkFrame(main_frame, fg_color=THUMB_WINDOW_BACKGROUND_COLOR)
-        other_effects_frame.pack(fill="x", padx=5, pady=5)
-        
-        # Título para outros efeitos
-        other_title = ctk.CTkLabel(
-            other_effects_frame,
-            text="Outros Efeitos",
-            font=("Arial", 12, "bold"),
-            text_color=THUMB_TEXT_COLOR
-        )
-        other_title.pack(pady=5, anchor="w")
-        
-        # Botões para outros efeitos
-        self.create_effect_buttons(other_effects_frame)
+    def create_effect_buttons(self, frame):
+        """Cria botões para efeitos adicionais"""
+        # Adicione aqui botões para outros efeitos
+        pass
 
 class ImageFiltersFrame(ctk.CTkFrame):
     def __init__(self, parent):
@@ -405,13 +357,34 @@ class ImageFiltersFrame(ctk.CTkFrame):
             command=self.show_filters_window
         )
         self.filters_button.pack(fill="x", padx=5, pady=5)
-    
+
     def show_filters_window(self):
         if self.filters_window is None or not self.filters_window.winfo_exists():
             self.filters_window = FiltersWindow(self)
             self.filters_window.focus_force()
         else:
             self.filters_window.focus_force()
+
+    def apply_effect(self, effect_name):
+        if hasattr(self.parent, 'loaded_image') and self.parent.loaded_image:
+            try:
+                effect_func = getattr(image_filters, f"apply_{effect_name}")
+                if effect_name == 'pixelate':
+                    filtered_image = effect_func(self.parent.loaded_image, 8)
+                else:
+                    filtered_image = effect_func(self.parent.loaded_image)
+                self.parent.update_image(filtered_image)
+            except Exception as e:
+                print(f"Erro ao aplicar efeito {effect_name}: {str(e)}")
+
+    def apply_filter(self, filter_name, value):
+        if hasattr(self.parent, 'loaded_image') and self.parent.loaded_image:
+            try:
+                filter_func = getattr(image_filters, f"adjust_{filter_name}")
+                filtered_image = filter_func(self.parent.loaded_image, float(value))
+                self.parent.update_image(filtered_image)
+            except Exception as e:
+                print(f"Erro ao aplicar filtro {filter_name}: {str(e)}")
 
 class ColorPaletteWindow(ctk.CTkToplevel):
     def __init__(self, parent, color_freq, color_clusters, quantized_image):
@@ -2783,6 +2756,95 @@ class ImageEditorApp(ctk.CTk):
 
         except Exception as e:
             messagebox.showerror("Erro de Impressão", f"Erro ao tentar imprimir a imagem: {e}")
+
+    def apply_filter_or_effect(self, effect_name, value=None, **kwargs):
+        """Aplica um filtro ou efeito à imagem atual e atualiza o histórico."""
+        if not self.loaded_image:
+            messagebox.showwarning("Aviso", "Nenhuma imagem carregada para aplicar filtro.")
+            return
+
+        # É uma boa prática trabalhar com uma cópia para não alterar a original diretamente
+        # até ter certeza que o filtro foi aplicado com sucesso.
+        # No entanto, para economizar memória em operações simples, podemos aplicar diretamente
+        # e usar o histórico para reverter se necessário.
+        # original_image = self.loaded_image.copy() # Descomente se preferir mais segurança
+
+        processed_image = None
+        action_data = {'name': effect_name} # Para o histórico
+        description = f"Aplicado: {effect_name}" # Descrição padrão para o histórico
+
+        try:
+            # --- Ajustes (geralmente com um valor numérico) ---
+            if effect_name == "brightness":
+                if value is None: value = 1.0 # Valor padrão ou último valor
+                processed_image = image_filters.adjust_brightness(self.loaded_image, float(value))
+                action_data['value'] = float(value)
+                description = f"Ajuste de Brilho: {float(value):.2f}"
+            elif effect_name == "contrast":
+                if value is None: value = 1.0
+                processed_image = image_filters.adjust_contrast(self.loaded_image, float(value))
+                action_data['value'] = float(value)
+                description = f"Ajuste de Contraste: {float(value):.2f}"
+            elif effect_name == "saturation":
+                if value is None: value = 1.0
+                processed_image = image_filters.adjust_saturation(self.loaded_image, float(value))
+                action_data['value'] = float(value)
+                description = f"Ajuste de Saturação: {float(value):.2f}"
+            elif effect_name == "sharpness":
+                if value is None: value = 1.0
+                processed_image = image_filters.adjust_sharpness(self.loaded_image, float(value))
+                action_data['value'] = float(value)
+                description = f"Ajuste de Nitidez: {float(value):.2f}"
+
+            # --- Efeitos (geralmente sem valor numérico extra) ---
+            elif effect_name == "grayscale":
+                processed_image = image_filters.apply_grayscale(self.loaded_image)
+                description = "Aplicado filtro: Escala de Cinza"
+            elif effect_name == "sepia":
+                processed_image = image_filters.apply_sepia(self.loaded_image)
+                description = "Aplicado filtro: Sépia"
+            elif effect_name == "negative":
+                processed_image = image_filters.apply_negative(self.loaded_image)
+                description = "Aplicado filtro: Negativo"
+            elif effect_name == "pixelate":
+                # Precisa de um valor (pixel_size), pode vir de um input ou slider
+                # Vamos usar um valor fixo por enquanto ou pegar de kwargs
+                pixel_size = kwargs.get('pixel_size', 8) # Default a 8
+                processed_image = image_filters.apply_pixelate(self.loaded_image, pixel_size)
+                action_data['pixel_size'] = pixel_size
+                description = f"Aplicado filtro: Pixelate (Tamanho: {pixel_size})"
+            elif effect_name == "vintage":
+                processed_image = image_filters.apply_vintage(self.loaded_image)
+                description = "Aplicado filtro: Vintage"
+            else:
+                print(f"Filtro/Efeito desconhecido: {effect_name}")
+                # self.loaded_image = original_image # Reverte se usou cópia
+                return
+
+            # Se a imagem foi processada com sucesso
+            if processed_image:
+                # Atualiza a imagem na UI
+                self.loaded_image = processed_image
+                self.image_modified = True # Marca como modificada
+                self.display_image()
+                self.update_status_bar()
+
+                # Adiciona ao histórico (se o history_ui existir)
+                if hasattr(self, 'history_ui') and hasattr(self.history_ui, 'history_manager'):
+                    self.history_ui.history_manager.add_action(
+                        action_type='filter_effect', # Tipo genérico para filtros/efeitos
+                        action_data=action_data, # Salva o nome e parâmetros aplicados
+                        description=description  # Descrição da ação
+                    )
+                else:
+                     print("Aviso: history_ui ou history_manager não encontrado para registrar ação.")
+
+
+        except Exception as e:
+            messagebox.showerror("Erro de Filtro", f"Erro ao aplicar {effect_name}: {str(e)}")
+            # self.loaded_image = original_image # Reverte para original em caso de erro, se usou cópia
+            # self.display_image() # Reexibe a original
+            self.update_status_bar() # Atualiza status bar mesmo em erro
 
 if __name__ == "__main__":
     init_db()
