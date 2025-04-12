@@ -1,4 +1,4 @@
-from PIL import Image, ImageEnhance, ImageFilter
+from PIL import Image, ImageEnhance, ImageFilter, ImageOps
 
 # Ajustes básicos
 
@@ -75,4 +75,4 @@ def apply_pixelate(image, pixel_size):
 def apply_vintage(image):
     """Apply a vintage effect to the image."""
     # This is a placeholder for a more complex vintage effect
-    return image.filter(ImageFilter.GaussianBlur(2)) 
+    return image.filter(ImageFilter.GaussianBlur(2))
