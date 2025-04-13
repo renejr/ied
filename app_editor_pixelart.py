@@ -293,17 +293,21 @@ class FiltersWindow(ctk.CTkToplevel):
                 command=lambda e=effect_name: self.parent.apply_filter_or_effect(e)
             )
             btn.pack(fill="x", padx=5, pady=2)
-            
+
+
     def create_sliders(self):
         """Cria os controles deslizantes para ajustes"""
-        # Configurações dos sliders
+        # Configurações dos sliders existentes
         sliders_config = [
             ("brightness", "Brilho", 0.0, 2.0),
             ("contrast", "Contraste", 0.0, 2.0),
             ("saturation", "Saturação", 0.0, 2.0),
-            ("sharpness", "Nitidez", 0.0, 2.0)
+            ("sharpness", "Nitidez", 0.0, 2.0),
+            ("smooth", "Suavização", 0.1, 3.0),
+            ("enhance", "Vivacidade de Cor", 0.1, 2.0)
         ]
 
+        # Loop para criar os sliders existentes
         for attr, label, min_val, max_val in sliders_config:
             # Frame para cada slider
             frame = ctk.CTkFrame(self.sliders_frame, fg_color=THUMB_WINDOW_BACKGROUND_COLOR)
@@ -324,15 +328,73 @@ class FiltersWindow(ctk.CTkToplevel):
                 from_=min_val,
                 to=max_val,
                 number_of_steps=100,
-                # !!! VERIFIQUE E CORRIJA ESTA LINHA !!!
-                command=lambda v, a=attr: self.parent.apply_filter_or_effect(a, value=float(v)) # Use float(v)
+                # Chama o método da classe pai (ImageEditorApp) corretamente
+                command=lambda v, a=attr: self.parent.apply_filter_or_effect(a, value=float(v))
             )
             slider.pack(side="right", expand=True, fill="x", padx=5)
             slider.set(1.0)  # Valor padrão
 
             # Armazena referência ao slider
             setattr(self, f"{attr}_slider", slider)
-            
+
+        # --- Adicionando Slider para Pixelate ---
+        # (Este bloco inteiro vai aqui DENTRO do método create_sliders)
+        attr_pixelate, label_pixelate, min_val_pixelate, max_val_pixelate = ("pixelate", "Pixelate", 2, 50) # Nome, Label, Mín, Máx
+        default_val_pixelate = 8 # Valor inicial
+
+        # Frame para o slider de Pixelate
+        # Adiciona um frame vazio para espaçamento
+        spacing_frame = ctk.CTkFrame(self.sliders_frame, fg_color=THUMB_WINDOW_BACKGROUND_COLOR, height=10)
+        spacing_frame.pack(fill="x", padx=5, pady=5)
+        
+        # Frame para o slider de Pixelate
+        frame_pixelate = ctk.CTkFrame(self.sliders_frame, fg_color=THUMB_WINDOW_BACKGROUND_COLOR)
+        frame_pixelate.pack(fill="x", padx=5, pady=2)
+
+        # Label para Pixelate
+        lbl_pixelate = ctk.CTkLabel(
+            frame_pixelate,
+            text=label_pixelate,
+            font=("Arial", 12),
+            text_color=THUMB_TEXT_COLOR
+        )
+        lbl_pixelate.pack(side="left", padx=5)
+
+        # Label para mostrar o valor atual do Pixelate
+        pixel_value_label = ctk.CTkLabel(
+            frame_pixelate,
+            text=f"{default_val_pixelate}", # Mostra valor inicial
+            font=("Arial", 10),
+            text_color=THUMB_TEXT_COLOR,
+            width=25 # Largura fixa pequena para o número
+        )
+        pixel_value_label.pack(side="right", padx=(0,5)) # Alinha à direita
+
+        # Função interna para atualizar o label e aplicar o filtro Pixelate
+        def update_pixelate(value):
+            pixel_size = int(value) # O tamanho do pixel deve ser inteiro
+            pixel_value_label.configure(text=f"{pixel_size}") # Atualiza o label que mostra o número
+            # Chama o método principal passando 'pixelate' e o valor inteiro
+            self.parent.apply_filter_or_effect(attr_pixelate, value=pixel_size)
+
+        # Slider para Pixelate
+        slider_pixelate = ctk.CTkSlider(
+            frame_pixelate,
+            from_=min_val_pixelate,
+            to=max_val_pixelate,
+            number_of_steps=int(max_val_pixelate - min_val_pixelate), # Passos de 1 em 1 pixel
+            command=update_pixelate # Chama a função interna 'update_pixelate'
+        )
+        # Ocupa o espaço horizontal restante no frame
+        slider_pixelate.pack(side="right", expand=True, fill="x", padx=5)
+        slider_pixelate.set(default_val_pixelate) # Define o valor inicial no slider
+
+        # Armazena referência ao slider (opcional, mas pode ser útil)
+        setattr(self, f"{attr_pixelate}_slider", slider_pixelate)
+        # --- Fim da adição do Slider para Pixelate ---
+
+# O restante da classe FiltersWindow continua abaixo...
+    
     def apply_effect(self, effect_name):
         """Aplica o efeito selecionado"""
         if hasattr(self.parent, 'apply_effect'):
@@ -360,7 +422,7 @@ class ImageFiltersFrame(ctk.CTkFrame):
 
     def show_filters_window(self):
         if self.filters_window is None or not self.filters_window.winfo_exists():
-            self.filters_window = FiltersWindow(self)
+            self.filters_window = FiltersWindow(self.parent)
             self.filters_window.focus_force()
         else:
             self.filters_window.focus_force()
@@ -2206,6 +2268,44 @@ class ImageEditorApp(ctk.CTk):
         
         # Atualiza o canvas
         self.display_image()
+        
+    def apply_filter_or_effect(self, filter_name, value=None):
+        """Aplica um filtro ou efeito à imagem atual
+        
+        Args:
+            filter_name: Nome do filtro ou efeito a ser aplicado
+            value: Valor opcional para filtros ajustáveis
+        """
+        if not hasattr(self, 'loaded_image') or not self.loaded_image:
+            return
+            
+        try:
+            # Determina se é um ajuste ou um efeito
+            if filter_name in ['brightness', 'contrast', 'saturation', 'sharpness', 'smooth', 'enhance']:
+                # É um ajuste com valor
+                if value is None:
+                    value = 1.0  # Valor padrão
+                filter_func = getattr(image_filters, f"adjust_{filter_name}", None)
+                if not filter_func:
+                    # Tenta como apply_ para os novos filtros que usam apply_ em vez de adjust_
+                    filter_func = getattr(image_filters, f"apply_{filter_name}", None)
+                if filter_func:
+                    filtered_image = filter_func(self.loaded_image, float(value))
+                    self.update_image(filtered_image)
+            else:
+                # É um efeito sem valor ajustável
+                effect_func = getattr(image_filters, f"apply_{filter_name}", None)
+                if effect_func:
+                    if filter_name == 'pixelate' and value is not None:
+                        # Pixelate precisa de um valor inteiro
+                        filtered_image = effect_func(self.loaded_image, int(value))
+                    else:
+                        filtered_image = effect_func(self.loaded_image)
+                    self.update_image(filtered_image)
+        except Exception as e:
+            print(f"Erro ao aplicar filtro {filter_name}: {str(e)}")
+            import traceback
+            traceback.print_exc()
     
     def display_image(self, image=None):
         """Exibe a imagem no canvas"""
@@ -2816,6 +2916,17 @@ class ImageEditorApp(ctk.CTk):
             elif effect_name == "vintage":
                 processed_image = image_filters.apply_vintage(self.loaded_image)
                 description = "Aplicado filtro: Vintage"
+            # --- Filtros de suavização e realce ---
+            elif effect_name == "smooth":
+                if value is None: value = 1.0
+                processed_image = image_filters.apply_smooth(self.loaded_image, float(value))
+                action_data['value'] = float(value)
+                description = f"Aplicado filtro: Suavização ({float(value):.2f})"
+            elif effect_name == "enhance":
+                if value is None: value = 1.0
+                processed_image = image_filters.apply_enhance(self.loaded_image, float(value))
+                action_data['value'] = float(value)
+                description = f"Aplicado filtro: Vivacidade de Cor ({float(value):.2f})"
             else:
                 print(f"Filtro/Efeito desconhecido: {effect_name}")
                 # self.loaded_image = original_image # Reverte se usou cópia
